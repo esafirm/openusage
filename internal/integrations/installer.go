@@ -55,7 +55,7 @@ func Install(def Definition, dirs Dirs) (InstallResult, error) {
 
 	// Write rendered template.
 	if writesArtifact {
-		if err := os.WriteFile(targetFile, []byte(content), def.TemplateFileMode); err != nil {
+		if err := writeFileAtomic(targetFile, []byte(content), def.TemplateFileMode); err != nil {
 			return InstallResult{}, fmt.Errorf("integrations: write template: %w", err)
 		}
 	}
@@ -77,7 +77,7 @@ func Install(def Definition, dirs Dirs) (InstallResult, error) {
 		if err := backupIfExists(configFile); err != nil {
 			return InstallResult{}, fmt.Errorf("integrations: backup config: %w", err)
 		}
-		if err := os.WriteFile(configFile, patched, 0o600); err != nil {
+		if err := writeFileAtomic(configFile, patched, 0o600); err != nil {
 			return InstallResult{}, fmt.Errorf("integrations: write config: %w", err)
 		}
 	}
@@ -114,7 +114,7 @@ func Uninstall(def Definition, dirs Dirs) error {
 			return fmt.Errorf("integrations: unpatch config: %w", err)
 		}
 		if patched != nil {
-			if err := os.WriteFile(configFile, patched, 0o600); err != nil {
+			if err := writeFileAtomic(configFile, patched, 0o600); err != nil {
 				return fmt.Errorf("integrations: write config: %w", err)
 			}
 		}

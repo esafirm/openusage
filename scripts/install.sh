@@ -121,6 +121,38 @@ verify_checksum_if_available() {
   log "Checksum verification passed."
 }
 
+# verify_signature_if_available checks the archive's Sigstore bundle against
+# the GitHub Actions OIDC identity of this repo (cosign keyless signing; see
+# .goreleaser.yaml). The checksum file above comes from the same origin as the
+# archive, so it only proves the download was not corrupted — the signature
+# proves who produced it. Skips when cosign is absent or the release has no
+# bundle (pre-signing releases); dies on a failed verification.
+verify_signature_if_available() {
+  local archive="$1"
+  local bundle="$2"
+  local version_tag="$3"
+  local bundle_path="${TMP_DIR}/${bundle}"
+
+  if ! has_cmd cosign; then
+    log "cosign not found; skipping signature verification."
+    return 0
+  fi
+
+  download_to \
+    "https://github.com/${REPO}/releases/download/${version_tag}/${bundle}" \
+    "$bundle_path" || return 0
+
+  if cosign verify-blob \
+    --bundle "$bundle_path" \
+    --certificate-identity-regexp 'https://github\.com/janekbaraniewski/openusage/\.github/workflows/' \
+    --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+    "$archive"; then
+    log "Signature verification passed."
+  else
+    die "signature verification failed for ${archive}"
+  fi
+}
+
 normalize_version_tag() {
   local v="$1"
   if [ -z "$v" ]; then
@@ -226,6 +258,8 @@ log "Downloading ${ASSET}..."
 download_to "$DOWNLOAD_URL" "$ARCHIVE_PATH" || die "failed to download asset: ${DOWNLOAD_URL}"
 
 verify_checksum_if_available "$ARCHIVE_PATH" "$ASSET" "$VERSION_TAG" "$CHECKSUM_PATH"
+
+verify_signature_if_available "$ARCHIVE_PATH" "${ASSET}.sigstore.json" "$VERSION_TAG"
 
 log "Extracting archive..."
 case "$ARCHIVE_EXT" in

@@ -168,3 +168,19 @@ func backupIfExists(path string) error {
 	}
 	return nil
 }
+
+// writeFileAtomic writes via a temp file + rename so a crash mid-write can
+// never leave the target truncated — the target files are other tools' live
+// configs (e.g. Claude Code settings.json) and executed hook scripts.
+// The renamed file carries `perm`, so an existing file's mode is replaced.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, perm); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
+}

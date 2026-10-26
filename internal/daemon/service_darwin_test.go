@@ -17,14 +17,16 @@ func TestLaunchdPlist_UsesDaemonRunSubcommand(t *testing.T) {
 		"/tmp/openusage.sock",
 		"/tmp/openusage.stdout.log",
 		"/tmp/openusage.stderr.log",
-		map[string]string{"OPENAI_API_KEY": "sk-test"},
 	)
 
 	if !strings.Contains(plist, "<string>daemon</string>\n\t\t<string>run</string>") {
 		t.Fatalf("launchd plist does not include daemon run subcommand:\n%s", plist)
 	}
-	if !strings.Contains(plist, "<key>EnvironmentVariables</key>") || !strings.Contains(plist, "<key>OPENAI_API_KEY</key>") {
-		t.Fatalf("launchd plist does not include env vars:\n%s", plist)
+	// Env vars must never be embedded in the plist: the file is written 0644
+	// and is world-readable. The daemon loads daemon.env (0600) itself via
+	// LoadServiceEnv at startup.
+	if strings.Contains(plist, "EnvironmentVariables") || strings.Contains(plist, "OPENAI_API_KEY") {
+		t.Fatalf("launchd plist must not embed env vars:\n%s", plist)
 	}
 }
 

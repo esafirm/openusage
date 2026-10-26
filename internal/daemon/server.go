@@ -323,7 +323,10 @@ func (s *Service) startSocketServer(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("listen telemetry daemon socket: %w", err)
 	}
-	_ = os.Chmod(s.cfg.SocketPath, 0o660)
+	// 0600 only: the daemon runs as this user, and on macOS the socket's group
+	// is staff, which every local user belongs to, so group bits would let any
+	// local account reach the (unauthenticated) hook and read-model endpoints.
+	_ = os.Chmod(s.cfg.SocketPath, 0o600)
 	s.infof("socket_listening", "path=%s", s.cfg.SocketPath)
 
 	mux := http.NewServeMux()

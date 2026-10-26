@@ -24,6 +24,11 @@ func (s *Service) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
+// maxRequestBodyBytes caps hook and read-model request bodies so a runaway
+// integration cannot make the daemon allocate unbounded memory. Hook payloads
+// are small JSON envelopes; 1 MiB is far above any real payload.
+const maxRequestBodyBytes = 1 << 20
+
 func (s *Service) handleHook(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
 	if r.Method != http.MethodPost {
@@ -38,6 +43,7 @@ func (s *Service) handleHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "read payload failed")
@@ -106,6 +112,7 @@ func (s *Service) handleReadModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	var req ReadModelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("decode read-model request: %v", err))

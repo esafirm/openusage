@@ -97,6 +97,16 @@ func OpenStore(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	// The DB holds per-session usage history (model names, session IDs, project
+	// paths). Nothing else needs to read it, so keep it at the same posture as
+	// credentials.json. SQLite creates files 0644 and the WAL/-shm files on
+	// their own creation, so chmod all three. Best-effort: some filesystems
+	// reject chmod, and by then Init has already created the file.
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		if err := os.Chmod(p, 0o600); err != nil && !os.IsNotExist(err) {
+			log.Printf("telemetry: chmod %s: %v", p, err)
+		}
+	}
 	return store, nil
 }
 
