@@ -72,6 +72,10 @@ run: ## Run the application locally
 build: deps ## Build the binary
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(APP_NAME)$(EXE) $(CMD_DIR)
 
+.PHONY: buildbin
+buildbin: ## Build the binary and install it into GOPATH/bin
+	$(GO) install $(GOFLAGS) -ldflags "$(LDFLAGS)" $(CMD_DIR)
+
 .PHONY: sync-tools
 sync-tools: ## Regenerate all AI tool config files from canonical template
 	@./scripts/sync-tool-configs.sh
