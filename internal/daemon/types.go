@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/janekbaraniewski/openusage/internal/config"
 	"github.com/janekbaraniewski/openusage/internal/core"
 )
 
@@ -20,7 +19,6 @@ type Config struct {
 	CollectInterval time.Duration
 	PollInterval    time.Duration
 	Verbose         bool
-	Export          config.ExportConfig
 }
 
 type ReadModelAccount struct {

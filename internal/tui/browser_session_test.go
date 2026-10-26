@@ -167,25 +167,6 @@ func apiKeyTabRowIndex(t *testing.T, m Model, accountID string) int {
 	return -1
 }
 
-func TestHandleSettingsModalKey_PrimaryBrowserSessionEnterStartsPicker(t *testing.T) {
-	m := Model{services: newBrowserSessionFake()}
-	m.settings.tab = settingsTabAPIKeys
-	m.settings.cursor = apiKeyTabRowIndex(t, m, "perplexity")
-
-	updated, cmd := m.handleSettingsModalKey(tea.KeyMsg{Type: tea.KeyEnter})
-	got := updated.(Model)
-
-	if !got.settings.browserPicker.active {
-		t.Fatal("browser picker not activated for primary browser-session provider")
-	}
-	if got.settings.browserPicker.accountID != "perplexity" {
-		t.Fatalf("picker accountID = %q, want perplexity", got.settings.browserPicker.accountID)
-	}
-	if cmd == nil {
-		t.Fatal("expected browser enumeration command")
-	}
-}
-
 func TestHandleSettingsModalKey_SupplementalBrowserSessionEnterEditsAPIKey(t *testing.T) {
 	m := Model{}
 	m.settings.tab = settingsTabAPIKeys
@@ -261,36 +242,6 @@ func TestHandleSettingsModalKey_SupplementalBrowserSessionAliasEnvAllowsConnect(
 	}
 	if cmd == nil {
 		t.Fatal("expected browser enumeration command")
-	}
-}
-
-func TestBrowserSessionConnectedMsg_PrimaryProviderRegistersAccount(t *testing.T) {
-	var captured core.AccountConfig
-	m := Model{}
-	m.onAddAccount = func(acct core.AccountConfig) { captured = acct }
-
-	updated, _ := m.Update(browserSessionConnectedMsg{
-		AccountID: "perplexity",
-		Info: core.BrowserSessionInfo{
-			Connected:     true,
-			Domain:        ".perplexity.ai",
-			CookieName:    "__Secure-next-auth.session-token",
-			SourceBrowser: "chrome",
-		},
-	})
-	got := updated.(Model)
-
-	if captured.Provider != "perplexity" {
-		t.Fatalf("captured provider = %q, want perplexity", captured.Provider)
-	}
-	if captured.Auth != "browser_session" {
-		t.Fatalf("captured auth = %q, want browser_session", captured.Auth)
-	}
-	if captured.BrowserCookie == nil || captured.BrowserCookie.SourceBrowser != "chrome" {
-		t.Fatalf("captured browser cookie = %+v, want source browser chrome", captured.BrowserCookie)
-	}
-	if got.accountProviders["perplexity"] != "perplexity" {
-		t.Fatalf("accountProviders[perplexity] = %q", got.accountProviders["perplexity"])
 	}
 }
 

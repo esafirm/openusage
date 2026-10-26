@@ -32,20 +32,15 @@ func withFakeOpenCodeAuth(t *testing.T, body string) string {
 
 func TestDetectOpenCodeAuth_AdoptsAPIKeyEntries(t *testing.T) {
 	withFakeOpenCodeAuth(t, `{
-		"moonshotai": {"type": "api", "key": "sk-moonshot-1234567890abcdef"},
-		"openrouter": {"type": "api", "key": "sk-or-v1-aaaaaaaaaaaa"},
-		"zai":        {"type": "api", "key": "zai-aaaa.bbbb"},
-		"anthropic":  {"type": "oauth", "refresh": "r", "access": "a", "expires": 1},
-		"openai":     {"type": "oauth", "refresh": "r", "access": "a", "expires": 1, "accountId": "id"}
+		"opencode": {"type": "api", "key": "oc-from-auth-json-1234"},
+		"openai":   {"type": "oauth", "refresh": "r", "access": "a", "expires": 1, "accountId": "id"}
 	}`)
 
 	var result Result
 	detectOpenCodeAuth(&result)
 
 	want := map[string]string{
-		"moonshot-ai": "moonshot",
-		"openrouter":  "openrouter",
-		"zai":         "zai",
+		"opencode": "opencode",
 	}
 	got := map[string]string{}
 	for _, a := range result.Accounts {
@@ -58,14 +53,14 @@ func TestDetectOpenCodeAuth_AdoptsAPIKeyEntries(t *testing.T) {
 	}
 	// OAuth-typed slots must NOT create accounts (we don't support OAuth-as-API-key).
 	for _, a := range result.Accounts {
-		if a.Provider == "anthropic" || a.Provider == "openai" || a.Provider == "google" {
+		if a.Provider == "openai" || a.Provider == "anthropic" || a.Provider == "google" {
 			t.Errorf("unexpected oauth-derived account: %+v", a)
 		}
 	}
 	// Tokens must land on the account so Fetch() can use them at runtime.
 	for _, a := range result.Accounts {
-		if a.ID == "moonshot-ai" && a.Token != "sk-moonshot-1234567890abcdef" {
-			t.Errorf("moonshot Token = %q, want the api key from auth.json", a.Token)
+		if a.ID == "opencode" && a.Token != "oc-from-auth-json-1234" {
+			t.Errorf("opencode Token = %q, want the api key from auth.json", a.Token)
 		}
 	}
 	// Provenance hint should be set so we can debug where the key came from.

@@ -43,7 +43,7 @@ At the highest level there are five moving parts:
 Three input sources feed the pipeline:
 
 - **Collectors** — driven by the daemon's polling loop. They call each provider's `Fetch()` on the configured interval and emit snapshots and derived events.
-- **Hooks** — agent integrations (Claude Code, Codex, OpenCode) POST per-turn events to the daemon over its Unix socket as they happen.
+- **Hooks** — agent integrations (Claude Code, OpenCode, Antigravity) POST per-turn events to the daemon over its Unix socket as they happen.
 - **Spool** — when the daemon is briefly unreachable, hook clients drop events into a disk queue (`~/.local/state/openusage/telemetry-spool/`) that is drained on next startup.
 
 Trade-offs:

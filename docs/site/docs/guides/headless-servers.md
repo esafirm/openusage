@@ -1,6 +1,6 @@
 ---
 title: Headless servers
-description: Running OpenUsage on a server without a desktop — daemon-only mode, tmux for the TUI, and SSH viewing.
+description: Running OpenUsage on a server without a desktop — daemon-only mode and SSH viewing.
 ---
 
 OpenUsage works on remote servers — for example a dedicated build host that runs many agent jobs. The two main patterns are **daemon-only** (collect data, no UI) and **TUI over SSH** (occasional inspection from your laptop).
@@ -69,15 +69,15 @@ The TUI keeps rendering whether anyone is attached or not.
 
 ## Integrations on a server
 
-If the server itself runs Claude Code, Codex, or OpenCode jobs, install the hooks the same way as on a workstation:
+If the server itself runs Claude Code, OpenCode, or Antigravity jobs, install the hooks the same way as on a workstation:
 
 ```bash
 openusage integrations install claude_code
-openusage integrations install codex
+openusage integrations install antigravity
 openusage integrations install opencode
 ```
 
-Claude and Codex have their config files patched (`~/.claude/settings.json`, `~/.codex/config.toml`). OpenCode needs no config change — it auto-discovers plugins in `~/.config/opencode/plugins/`. The hook scripts shell out to `openusage telemetry hook <source>` and post events to the daemon.
+Claude Code and Antigravity have their config files patched (`~/.claude/settings.json`, the Antigravity `settings.json`). OpenCode needs no config change - it auto-discovers plugins in `~/.config/opencode/plugins/`. The hook scripts shell out to `openusage telemetry hook <source>` and post events to the daemon.
 
 If the daemon is briefly unavailable, hooks spool to `~/.local/state/openusage/telemetry-spool/` and are drained when it comes back.
 

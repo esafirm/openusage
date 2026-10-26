@@ -12,9 +12,6 @@ import (
 )
 
 func (m Model) buildTileGaugeLines(snap core.UsageSnapshot, widget core.DashboardWidget, innerW int) []string {
-	if snap.ProviderID == "codex" {
-		return buildCodexQuotaLines(snap, innerW, m.warnThreshold, m.critThreshold, m.viewNow())
-	}
 	maxLabelW := 14
 	gaugeW := innerW - maxLabelW - 10 // label + gauge + " XX.X%" + spaces
 	if gaugeW < 6 {
@@ -227,10 +224,6 @@ func metricHasGauge(key string, met core.Metric) bool {
 //   - "100% in 42m"                     (pace known but no reset timestamp)
 //   - ""                                 (nothing meaningful to show)
 func tileGaugeProjectionAnnotation(snap core.UsageSnapshot, key string, met core.Metric, usedPct float64, now time.Time) string {
-	if key == "codex_credit_percent_used" {
-		return tileCodexCreditProjectionAnnotation(snap, usedPct, now)
-	}
-
 	windowDur, ok := gaugeWindowDuration(met.Window)
 	if !ok {
 		return ""
@@ -290,52 +283,4 @@ func tileGaugeProjectionAnnotation(snap core.UsageSnapshot, key string, met core
 	}
 
 	return joinAnnotationParts(resetPart, projPart)
-}
-
-func tileCodexCreditProjectionAnnotation(snap core.UsageSnapshot, usedPct float64, now time.Time) string {
-	resetAt, hasReset := snap.Resets["codex_credit_limit"]
-	if !hasReset {
-		return ""
-	}
-
-	resetIn := resetAt.Sub(now)
-	resetPart := ""
-	if resetIn > 0 {
-		resetPart = "resets " + formatDurationShort(resetIn)
-	}
-
-	rateMetric, hasRate := snap.Metrics["codex_credit_burn_rate"]
-	creditMetric, hasCredits := snap.Metrics["codex_credit_limit"]
-	if !hasRate || !hasCredits || rateMetric.Used == nil || creditMetric.Limit == nil || *rateMetric.Used <= 0 || *creditMetric.Limit <= 0 || usedPct >= 100 {
-		return resetPart
-	}
-
-	// Convert the credit burn rate into percentage points per hour using the
-	// authoritative current-period credit limit.
-	pctPerHour := *rateMetric.Used / *creditMetric.Limit * 100
-	if pctPerHour <= 0 {
-		return resetPart
-	}
-	remainingPct := 100 - usedPct
-	hoursTo100 := remainingPct / pctPerHour
-	if hoursTo100 <= 0 {
-		return resetPart
-	}
-
-	var projection string
-	if resetIn > 0 && time.Duration(hoursTo100*float64(time.Hour)) > resetIn {
-		projectedPct := usedPct + pctPerHour*resetIn.Hours()
-		projected := int(math.Round(projectedPct))
-		if projected < 0 {
-			projected = 0
-		}
-		if projected >= 100 {
-			projected = 99
-		}
-		projection = fmt.Sprintf("~%d%% by reset", projected)
-	} else {
-		projection = "100% in " + formatDurationShort(time.Duration(hoursTo100*float64(time.Hour)))
-	}
-
-	return joinAnnotationParts(resetPart, projection)
 }

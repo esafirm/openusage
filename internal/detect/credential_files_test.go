@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
-
-	"github.com/janekbaraniewski/openusage/internal/core"
 )
 
 // withCleanCredentialEnv resets HOME / APPDATA / known env vars to safe
@@ -136,61 +134,6 @@ func TestProbeGHHostsFile_NoOAuthTokenIsNoOp(t *testing.T) {
 	probeGHHostsFile(&result)
 	if len(result.Accounts) != 0 {
 		t.Errorf("expected 0 accounts when oauth_token absent, got %+v", result.Accounts)
-	}
-}
-
-func TestProbeGcloudADCFile_AnnotatesGeminiAccount(t *testing.T) {
-	home := withCleanCredentialEnv(t)
-	adcDir := filepath.Join(home, ".config", "gcloud")
-	if runtime.GOOS == "windows" {
-		adcDir = filepath.Join(home, "AppData", "Roaming", "gcloud")
-	}
-	if err := os.MkdirAll(adcDir, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	body := `{
-		"type": "authorized_user",
-		"client_id": "fake.apps.googleusercontent.com",
-		"client_secret": "fake-secret",
-		"refresh_token": "1//fake-refresh-token"
-	}`
-	if err := os.WriteFile(filepath.Join(adcDir, "application_default_credentials.json"), []byte(body), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-
-	// Pre-existing gemini_api account that the probe should annotate.
-	result := Result{Accounts: []core.AccountConfig{{
-		ID:       "gemini-api",
-		Provider: "gemini_api",
-		Auth:     "api_key",
-	}}}
-	probeGcloudADCFile(&result)
-
-	if len(result.Accounts) != 1 {
-		t.Fatalf("expected 1 account (annotation, no new), got %d", len(result.Accounts))
-	}
-	if result.Accounts[0].Hint("gcloud_adc", "") == "" {
-		t.Errorf("gcloud_adc hint not set on gemini account")
-	}
-}
-
-func TestProbeGcloudADCFile_ServiceAccountSkipped(t *testing.T) {
-	home := withCleanCredentialEnv(t)
-	adcDir := filepath.Join(home, ".config", "gcloud")
-	if runtime.GOOS == "windows" {
-		adcDir = filepath.Join(home, "AppData", "Roaming", "gcloud")
-	}
-	if err := os.MkdirAll(adcDir, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	body := `{"type": "service_account", "client_email": "sa@p.iam.gserviceaccount.com"}`
-	if err := os.WriteFile(filepath.Join(adcDir, "application_default_credentials.json"), []byte(body), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	result := Result{Accounts: []core.AccountConfig{{ID: "gemini-api", Provider: "gemini_api"}}}
-	probeGcloudADCFile(&result)
-	if v := result.Accounts[0].Hint("gcloud_adc", ""); v != "" {
-		t.Errorf("service-account JSON should not annotate; got %q", v)
 	}
 }
 

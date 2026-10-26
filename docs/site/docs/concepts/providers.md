@@ -3,7 +3,7 @@ title: Providers
 description: What a provider is in OpenUsage, the three categories, and how each one shapes its own dashboard and detail widgets.
 ---
 
-A **provider** in OpenUsage is a single Go package that knows how to talk to one AI service and produce a normalized `UsageSnapshot`. There are 37 providers shipped in the binary, and each one declares both how it fetches data and how it should look in the TUI.
+A **provider** in OpenUsage is a single Go package that knows how to talk to one AI service and produce a normalized `UsageSnapshot`. There are five providers shipped in the binary, and each one declares both how it fetches data and how it should look in the TUI.
 
 ## The provider contract
 
@@ -33,7 +33,7 @@ Providers fall into three buckets based on how they collect data.
 
 Providers that hit a vendor REST API with the user's key. Most of these probe rate-limit headers cheaply; some pull rich JSON about credits and per-model usage.
 
-Examples: `openai`, `anthropic`, `openrouter`, `groq`, `mistral`, `deepseek`, `xai`, `gemini_api`, `alibaba_cloud`, `moonshot`, `perplexity`, `zai`.
+Examples: `openai`.
 
 Detection signal: an env var holding the key.
 
@@ -41,7 +41,7 @@ Detection signal: an env var holding the key.
 
 Providers backed by a local CLI or IDE. They usually read on-disk session files, optionally combined with a vendor API.
 
-Examples: `claude_code`, `cursor`, `codex`, `copilot`, `gemini_cli`, `antigravity`, `opencode`.
+Examples: `claude_code`, `opencode`, `antigravity`, `copilot`.
 
 Detection signal: a binary on `$PATH` plus a config directory.
 
@@ -86,13 +86,12 @@ For more detail on the snapshot model see [snapshots](snapshots.md).
 3. The daemon's pipeline calls `Fetch()` on a ticker as part of the collector loop.
 4. The latest snapshot is rendered through the provider's widget definitions.
 
-## The 37 providers at a glance
+## The five providers at a glance
 
 | Category | Providers |
 |---|---|
-| API platforms | openai, anthropic, openrouter, groq, mistral, deepseek, xai, gemini_api, alibaba_cloud, moonshot, zai, perplexity |
-| Coding agents | claude_code, cursor, codex, copilot, gemini_cli, antigravity, opencode |
-| Local runtimes | ollama |
+| API platforms | openai |
+| Coding agents | claude_code, opencode, antigravity, copilot |
 
 For the full per-provider reference (auth, endpoints, fields tracked, caveats), see the [provider catalog](/providers).
 

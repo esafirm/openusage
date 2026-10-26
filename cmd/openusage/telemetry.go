@@ -49,13 +49,13 @@ func newTelemetryHookCommand() *cobra.Command {
 			"",
 			"The payload is read from stdin by default. If a non-empty positional",
 			"payload argument is provided after <source>, it is used instead of stdin.",
-			"This supports tools (e.g. Codex's notify) that pass the event JSON as argv.",
+			"This supports tools that pass the event JSON as argv.",
 		}, "\n"),
 		Example: strings.Join([]string{
 			"  openusage telemetry hook opencode < /tmp/opencode-hook-event.json",
-			"  openusage telemetry hook codex < /tmp/codex-notify-payload.json",
 			"  openusage telemetry hook claude_code < /tmp/claude-hook-payload.json",
-			"  openusage telemetry hook codex '{\"type\":\"agent-turn-complete\"}'",
+			"  openusage telemetry hook antigravity < /tmp/antigravity-status.json",
+			"  openusage telemetry hook opencode '{\"type\":\"tool.execute.after\"}'",
 		}, "\n"),
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -70,9 +70,8 @@ func newTelemetryHookCommand() *cobra.Command {
 				return fmt.Errorf("unknown telemetry source %q; known sources: %s", sourceName, strings.Join(known, ", "))
 			}
 
-			// Prefer a positional payload arg when provided and non-empty
-			// (e.g. Codex's notify passes the event JSON as argv). Otherwise
-			// read the payload from stdin exactly as before.
+			// Prefer a positional payload arg when provided and non-empty.
+			// Otherwise read the payload from stdin exactly as before.
 			var payload []byte
 			if len(args) > 1 && strings.TrimSpace(args[1]) != "" {
 				payload = []byte(args[1])
@@ -228,7 +227,6 @@ func newTelemetryDaemonCommand() *cobra.Command {
 			CollectInterval: resolvedCollect,
 			PollInterval:    resolvedPoll,
 			Verbose:         verbose,
-			Export:          cfgFile.Export,
 		})
 	}
 

@@ -16,10 +16,6 @@ type compactMetricRowSpec struct {
 	maxSegments int
 }
 
-func buildTileCompactMetricSummaryLines(snap core.UsageSnapshot, widget core.DashboardWidget, innerW int) ([]string, map[string]bool) {
-	return buildTileCompactMetricSummaryLinesWithHide(snap, widget, innerW, false)
-}
-
 // buildTileCompactMetricSummaryLinesWithHide is the hide-costs-aware variant.
 // When hideCosts is true, monetary keys (USD-valued, burn rate, anything that
 // would render dollars) are dropped from both row collection and segment
@@ -333,10 +329,6 @@ func compactMetricAmount(v float64, unit string) string {
 	default:
 		return fmt.Sprintf("%s %s", shortCompact(v), unit)
 	}
-}
-
-func (m Model) buildTileMetricLines(snap core.UsageSnapshot, widget core.DashboardWidget, innerW int, skipKeys map[string]bool) []string {
-	return m.buildTileMetricLinesWithHide(snap, widget, innerW, skipKeys, false)
 }
 
 func (m Model) buildTileMetricLinesWithHide(snap core.UsageSnapshot, widget core.DashboardWidget, innerW int, skipKeys map[string]bool, hideCosts bool) []string {

@@ -72,20 +72,9 @@ run: ## Run the application locally
 build: deps ## Build the binary
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(APP_NAME)$(EXE) $(CMD_DIR)
 
-.PHONY: demo
-demo: deps ## Build and run the demo with dummy data (for screenshots)
-	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(APP_NAME)-demo$(EXE) ./cmd/demo
-	$(BIN_DIR)/$(APP_NAME)-demo$(EXE)
-
 .PHONY: sync-tools
 sync-tools: ## Regenerate all AI tool config files from canonical template
 	@./scripts/sync-tool-configs.sh
-
-.PHONY: icon-font
-icon-font: ## Regenerate the provider icon font (internal/tmux/assets/openusage-icons.ttf)
-	@python3 -m venv .venv-font 2>/dev/null || true
-	@.venv-font/bin/pip install --quiet 'fonttools==4.63.0'
-	@.venv-font/bin/python scripts/gen-icon-font.py
 
 .PHONY: docs-install
 docs-install: ## Install the docs site dependencies

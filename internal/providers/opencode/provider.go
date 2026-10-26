@@ -310,31 +310,14 @@ func (p *Provider) enrichFromConsole(ctx context.Context, acct core.AccountConfi
 	// This is more reliable than individual RPC calls whose content-hash
 	// IDs rotate on every backend deploy. The page embeds both billing.get
 	// and lite.subscription.get data in a Seroval script blob.
-	type pageResult struct {
-		subscription SubscriptionUsage
-		billing      BillingInfo
-		err          error
-	}
-
-	pageCh := make(chan pageResult, 1)
-	go func() {
-		sub, bill, err := client.FetchGoUsagePage(ctx, workspaceID)
-		pageCh <- pageResult{sub, bill, err}
-	}()
-
-	page := <-pageCh
+	subscription, billing, pageErr := client.FetchGoUsagePage(ctx, workspaceID)
 
 	// If HTML scraping fails, fall back to individual RPC calls.
-	var billing BillingInfo
-	var subscription SubscriptionUsage
 	billingFailed := false
 
-	if page.err != nil {
-		snap.SetDiagnostic("opencode_page_scrape_error", page.err.Error())
+	if pageErr != nil {
+		snap.SetDiagnostic("opencode_page_scrape_error", pageErr.Error())
 		billingFailed = true
-	} else {
-		billing = page.billing
-		subscription = page.subscription
 	}
 
 	// Fallback: try individual billing RPC if page scraping didn't get billing data.
@@ -362,10 +345,10 @@ func (p *Provider) enrichFromConsole(ctx context.Context, acct core.AccountConfi
 		switch {
 		case errors.As(fallbackErr, &authErr):
 			return fallbackErr
-		case errors.As(page.err, &authErr):
-			return page.err
+		case errors.As(pageErr, &authErr):
+			return pageErr
 		default:
-			return fmt.Errorf("opencode console: billing unavailable (page scrape: %v, fallback: %v)", page.err, fallbackErr)
+			return fmt.Errorf("opencode console: billing unavailable (page scrape: %v, fallback: %v)", pageErr, fallbackErr)
 		}
 	}
 

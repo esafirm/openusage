@@ -150,17 +150,8 @@ func CaptureStatusLine(data []byte, path string) (string, error) {
 	return renderStatusLine(payload), nil
 }
 
-// RenderStatusLine returns a safe fallback line for a raw payload. It is kept
-// separate from CaptureStatusLine so command failures never print JSON or a
-// multi-line error into Antigravity's UI.
-func RenderStatusLine(data []byte) string {
-	payload, err := parseStatusLinePayload(data)
-	if err != nil {
-		return "AGY"
-	}
-	return renderStatusLine(payload)
-}
-
+// addReceivedAt copies the raw payload and stamps the receive time so Fetch
+// can tell stale quota windows from fresh ones.
 func addReceivedAt(data []byte, receivedAt time.Time) ([]byte, error) {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(data, &object); err != nil {

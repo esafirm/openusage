@@ -19,18 +19,7 @@ type providerDisplayInfo struct {
 }
 
 func computeDisplayInfo(snap core.UsageSnapshot, widget core.DashboardWidget, hideCosts bool) providerDisplayInfo {
-	info := normalizeProviderDisplayInfoType(computeDisplayInfoRaw(snap, widget, hideCosts))
-	if snap.ProviderID != "codex" || snap.Status == core.StatusError || snap.Status == core.StatusAuth || snap.Status == core.StatusUnsupported {
-		return info
-	}
-	for key, metric := range snap.Metrics {
-		if strings.HasPrefix(key, "rate_limit_") && metricUsedPercent(key, metric) >= 0 {
-			return info
-		}
-	}
-	info.tagLabel, info.tagEmoji = "Usage", "⚡"
-	info.summary, info.detail, info.gaugePercent = "Quotas unavailable", "", -1
-	return info
+	return normalizeProviderDisplayInfoType(computeDisplayInfoRaw(snap, widget, hideCosts))
 }
 
 func normalizeProviderDisplayInfoType(info providerDisplayInfo) providerDisplayInfo {
@@ -688,10 +677,6 @@ func pluralize(n float64, singular, plural string) string {
 		return "1 " + singular
 	}
 	return fmt.Sprintf("%.0f %s", n, plural)
-}
-
-func windowActivityLine(snap core.UsageSnapshot, tw core.TimeWindow) string {
-	return windowActivityLineWithHide(snap, tw, false)
 }
 
 // windowActivityLineWithHide is the hide-costs-aware variant. When hideCosts

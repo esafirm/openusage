@@ -63,9 +63,6 @@ func TestParseLiteLLM_Golden(t *testing.T) {
 	if gpt4o.InputCostPerMillion != 2.5 {
 		t.Errorf("gpt-4o input = %v, want 2.5", gpt4o.InputCostPerMillion)
 	}
-	if stripLiteLLMProviderPrefix("openai/gpt-4o") != "gpt-4o" {
-		t.Errorf("stripLiteLLMProviderPrefix didn't trim")
-	}
 
 	gem, ok := table["gemini-1.5-pro"]
 	if !ok {

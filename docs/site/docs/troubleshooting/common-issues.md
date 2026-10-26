@@ -147,9 +147,6 @@ openusage: the dashboard needs an interactive terminal (stdin and stdout must be
 
 Fixes:
 
-- For machine-readable output use `openusage export` (JSON/CSV on stdout or to a file).
-- For text summaries use the [CLI reports](../guides/cli-reports.md): `openusage daily`, `weekly`, `monthly`, `session`, `blocks`.
-- For a one-line status use `openusage statusline`.
 - If you meant to open the dashboard, run it directly in a terminal without redirecting stdin or stdout. Redirecting only stderr (`openusage 2> debug.log`) is fine.
 
 If a terminal is left in a broken state (no echo, "staircase" output) after an older version was killed, run `reset` or `stty sane`.

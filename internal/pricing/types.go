@@ -76,13 +76,3 @@ type TierRates struct {
 	CacheReadCostPerMillion  *float64 `json:"cache_read_cost_per_million,omitempty"`
 	CacheWriteCostPerMillion *float64 `json:"cache_write_cost_per_million,omitempty"`
 }
-
-// TieredPrice pairs a single Price snapshot with the lower-bound context
-// length at which its rates apply. Resolvers build a tier ladder by
-// sorting TieredPrice entries by AppliesAbove ascending.
-type TieredPrice struct {
-	// AppliesAbove is the (exclusive) lower context-length bound at which
-	// the contained Price takes effect. 0 means "base / no minimum".
-	AppliesAbove int
-	Price        Price
-}

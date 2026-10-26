@@ -24,14 +24,12 @@ The TUI reads the file on startup and writes it back when you change settings in
 | [`dashboard`](#dashboard) | object | Provider list, view, and widget sections. |
 | [`model_normalization`](#model_normalization) | object | Group raw model ids by canonical lineage. |
 | [`integrations`](#integrations) | object | Install state for tool hooks. |
-| [`export`](#export) | object | Daemon push to a remote hub (multi-machine aggregation). |
-| [`hub`](#hub) | object | Hub server bind address and stale-timeout. |
 | [`accounts`](#accounts) | array | Manually configured provider accounts. |
 | [`auto_detected_accounts`](#auto_detected_accounts) | array | Read-only mirror of accounts found by the detector. |
 
 ## `auto_detect`
 
-Whether to auto-detect installed AI tools (Cursor, Claude Code, Codex, Copilot, Gemini CLI, Aider, Ollama) and API keys from the environment.
+Whether to auto-detect installed AI tools (Claude Code, OpenCode, Antigravity, Copilot) and API keys from the environment.
 
 ```json
 { "auto_detect": true }
@@ -158,7 +156,7 @@ Resolution order, highest precedence first:
 2. `dashboard.hide_costs` (top-level override)
 3. Automatic, plan-aware policy
 
-The automatic policy hides costs on fixed-rate subscription plans (Claude Code with an active subscription, Codex on Plus / Team / Enterprise, GitHub Copilot on any plan, Z.AI on `glm_coding_plan*`) where dollar figures would be misleading, and shows costs everywhere else.
+The automatic policy hides costs on fixed-rate subscription plans (Claude Code with an active subscription, GitHub Copilot on any plan) where dollar figures would be misleading, and shows costs everywhere else.
 
 You can also toggle the per-account override live from the dashboard with <kbd>c</kbd> — it cycles auto → hide → show → auto for the focused tile and persists the choice here.
 
@@ -249,52 +247,6 @@ Install state for tool hook integrations. Managed by `openusage integrations` �
 | `installed_at` | RFC3339 | Timestamp of last install. |
 | `declined` | bool | If true, the install prompt is suppressed. |
 
-## `export`
-
-Configures the daemon-side **exporter** that pushes snapshots to a remote [hub](#hub). When `export.target` is empty (default), nothing is pushed. See the [Multi-machine aggregation guide](../guides/multi-machine.md) for the end-to-end flow.
-
-```json
-{
-  "export": {
-    "target": "http://hub.lan:9190",
-    "interval_seconds": 60,
-    "machine_name": "work-laptop"
-  }
-}
-```
-
-| Field | Type | Default | Purpose |
-|---|---|---|---|
-| `target` | string | `""` | Hub base URL. Empty disables export. Trailing slash is trimmed. |
-| `interval_seconds` | int | `60` | Push period. Values ≤ 0 fall back to the default. |
-| `machine_name` | string | `os.Hostname()` | Identifier sent in the `RemoteEnvelope.machine` field. Override when your hostname is generic (e.g. `localhost`). |
-
-:::warning Auth token is not stored in settings.json
-The exporter uses a Bearer token when the hub requires auth. Supply it via the `OPENUSAGE_HUB_TOKEN` environment variable — the field has no JSON representation and cannot be persisted to disk. This mirrors the [`accounts[].api_key_env`](#accounts) posture: secrets live in your shell, not in config files.
-:::
-
-## `hub`
-
-Configures the **hub server** started by `openusage hub`. See [`openusage hub` in the CLI reference](./cli.md#openusage-hub) for command-line flags and the unsafe-default guard.
-
-```json
-{
-  "hub": {
-    "listen_addr": ":9190",
-    "stale_timeout_seconds": 300
-  }
-}
-```
-
-| Field | Type | Default | Purpose |
-|---|---|---|---|
-| `listen_addr` | string | `:9190` | TCP address to bind. `:9190` listens on all interfaces; `127.0.0.1:9190` is loopback-only. Overridden by `--listen` at runtime. |
-| `stale_timeout_seconds` | int | `300` | Seconds before a machine entry is pruned from the in-memory store. Values ≤ 0 fall back to the default. |
-
-:::warning Auth token is not stored in settings.json
-The hub honors a Bearer token only when supplied via the `OPENUSAGE_HUB_TOKEN` environment variable. The field has no JSON representation and cannot be persisted to disk. When the env var is unset, all endpoints except `/healthz` are open — and the hub refuses to bind to a non-loopback interface unless `--allow-public` is passed.
-:::
-
 ## `accounts`
 
 Manually configured provider accounts. Account `id` must be unique across `accounts` and `auto_detected_accounts`.
@@ -343,8 +295,8 @@ Manually configured provider accounts. Account `id` must be unique across `accou
 | `provider` | string | Provider plugin id (e.g. `openai`, `anthropic`, `cursor`, `claude_code`). |
 | `api_key_env` | string | Name of the env var that holds the API key. The key is **never** persisted — only the var name is. |
 | `auth` | string | Optional auth mode override (`api_key`, `oauth`, etc., where supported). |
-| `base_url` | string | Override the provider's base URL. Common for self-hosted Ollama or alternate Moonshot endpoints. |
-| `binary` | string | For non-API providers, the path or name of the local binary or file (e.g. `gh` for Copilot, the Gemini CLI binary, the Claude state file path). |
+| `base_url` | string | Override the provider's base URL. Common for alternate OpenAI-compatible endpoints. |
+| `binary` | string | For local providers, the path or name of the local binary (e.g. `copilot` for Copilot, `agy` for Antigravity). |
 | `probe_model` | string | For header-probing providers, the model to send a minimal request against. |
 
 :::warning API keys are never stored
@@ -405,15 +357,6 @@ Read-only mirror of accounts the detector found at startup. Format is identical 
       "version": "1.0.0",
       "installed_at": "2025-01-15T10:30:00Z"
     }
-  },
-  "export": {
-    "target": "",
-    "interval_seconds": 60,
-    "machine_name": ""
-  },
-  "hub": {
-    "listen_addr": ":9190",
-    "stale_timeout_seconds": 300
   },
   "accounts": [
     {
@@ -501,4 +444,3 @@ Overrides are loaded once at startup; restart `openusage` or the daemon after ed
 - [Paths reference](./paths.md) — where the file lives on each OS
 - [Themes](../customization/themes.md) — values for the `theme` field
 - [Widgets](../customization/widgets.md) — values for `dashboard.widget_sections`
-- [Multi-machine aggregation](../guides/multi-machine.md) — `export` + `hub` setup walkthrough

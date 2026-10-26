@@ -203,19 +203,29 @@ func TestOAuthAuthHeaders(t *testing.T) {
 }
 
 // TestUsageAuthSources_NamesAndOrder pins down the fixture list itself:
-// cookie/org is tried before oauth, matching the macOS-first, CLI-fallback
-// priority documented on usageAuthSources.
+// oauth is first because it never prompts; the setup-only cookie source is
+// appended when explicitly enabled.
 func TestUsageAuthSources_NamesAndOrder(t *testing.T) {
+	t.Setenv("OPENUSAGE_CLAUDE_DESKTOP_COOKIES", "1")
 	p := &Provider{}
 	sources := p.usageAuthSources("org-uuid")
 	if len(sources) != 2 {
 		t.Fatalf("len(sources) = %d, want 2", len(sources))
 	}
-	if sources[0].name != "cookie" {
-		t.Errorf("sources[0].name = %q, want %q", sources[0].name, "cookie")
+	if sources[0].name != "oauth" {
+		t.Errorf("sources[0].name = %q, want %q", sources[0].name, "oauth")
 	}
-	if sources[1].name != "oauth" {
-		t.Errorf("sources[1].name = %q, want %q", sources[1].name, "oauth")
+	if sources[1].name != "cookie" {
+		t.Errorf("sources[1].name = %q, want %q", sources[1].name, "cookie")
+	}
+}
+
+func TestUsageAuthSources_CookieHiddenByDefault(t *testing.T) {
+	t.Setenv("OPENUSAGE_CLAUDE_DESKTOP_COOKIES", "0")
+	p := &Provider{}
+	sources := p.usageAuthSources("org-uuid")
+	if len(sources) != 1 || sources[0].name != "oauth" {
+		t.Fatalf("sources = %+v, want only oauth", sources)
 	}
 }
 
@@ -254,6 +264,7 @@ func TestUsageAuthSources_OAuthPrepare_UsesOAuthSchemeAndURL(t *testing.T) {
 // TestFindUsageAuthSource covers the pin-lookup helper readUsageAPI relies on
 // to resume the previously successful source.
 func TestFindUsageAuthSource(t *testing.T) {
+	t.Setenv("OPENUSAGE_CLAUDE_DESKTOP_COOKIES", "1")
 	p := &Provider{}
 	sources := p.usageAuthSources("org-uuid")
 

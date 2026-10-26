@@ -26,7 +26,7 @@ const (
 // lives in the credentials store and is re-extracted from the browser on
 // every poll.
 type BrowserCookieRef struct {
-	// Domain the cookie is set on (e.g. ".opencode.ai", ".perplexity.ai").
+	// Domain the cookie is set on (for example ".opencode.ai").
 	// Leading dot is optional; matchers normalize.
 	Domain string `json:"domain,omitempty"`
 	// CookieName is the literal cookie name (e.g. "auth",

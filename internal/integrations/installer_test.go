@@ -9,11 +9,13 @@ import (
 )
 
 func testDirs(root string) Dirs {
+	bin := filepath.Join(root, "openusage-bin")
+	_ = os.WriteFile(bin, nil, 0o755)
 	return Dirs{
 		Home:         root,
 		ConfigRoot:   filepath.Join(root, ".config"),
 		HooksDir:     filepath.Join(root, ".config", "openusage", "hooks"),
-		OpenusageBin: "/usr/local/bin/openusage",
+		OpenusageBin: bin,
 	}
 }
 
@@ -71,56 +73,6 @@ func TestInstallClaudeCode(t *testing.T) {
 		entries, ok := hooks[event].([]any)
 		if !ok || len(entries) == 0 {
 			t.Fatalf("config missing hook entries for %s", event)
-		}
-	}
-}
-
-func TestInstallCodex(t *testing.T) {
-	root := t.TempDir()
-	dirs := testDirs(root)
-	def, ok := DefinitionByID(CodexID)
-	if !ok {
-		t.Fatal("CodexID definition not found")
-	}
-
-	result, err := Install(def, dirs)
-	if err != nil {
-		t.Fatalf("Install() error = %v", err)
-	}
-	if result.Action != "installed" {
-		t.Fatalf("result.Action = %q, want %q", result.Action, "installed")
-	}
-
-	writesArtifact := def.WritesArtifact == nil || def.WritesArtifact(dirs)
-	if writesArtifact {
-		// Verify template (Unix: a codex-notify.sh script is written).
-		templateData, err := os.ReadFile(result.TemplateFile)
-		if err != nil {
-			t.Fatalf("read template file: %v", err)
-		}
-		if !strings.Contains(string(templateData), "openusage-integration-version: "+IntegrationVersion) {
-			t.Fatal("template missing version marker")
-		}
-	}
-
-	// Verify config has notify line.
-	configData, err := os.ReadFile(result.ConfigFile)
-	if err != nil {
-		t.Fatalf("read config file: %v", err)
-	}
-	configStr := string(configData)
-	if !strings.Contains(configStr, "notify") {
-		t.Fatal("config missing notify line")
-	}
-	if writesArtifact {
-		if !strings.Contains(configStr, "codex-notify.sh") {
-			t.Fatal("config missing hook file reference")
-		}
-	} else {
-		// Windows: the openusage binary is registered directly with the
-		// telemetry hook subcommand instead of a script file.
-		if !strings.Contains(configStr, "telemetry") || !strings.Contains(configStr, "hook") || !strings.Contains(configStr, "codex") {
-			t.Fatalf("config missing binary notify registration: %s", configStr)
 		}
 	}
 }
@@ -258,35 +210,6 @@ func TestUninstallClaudeCode(t *testing.T) {
 	}
 }
 
-func TestUninstallCodex(t *testing.T) {
-	root := t.TempDir()
-	dirs := testDirs(root)
-	def, _ := DefinitionByID(CodexID)
-
-	result, err := Install(def, dirs)
-	if err != nil {
-		t.Fatalf("Install() error = %v", err)
-	}
-
-	if err := Uninstall(def, dirs); err != nil {
-		t.Fatalf("Uninstall() error = %v", err)
-	}
-
-	if def.WritesArtifact == nil || def.WritesArtifact(dirs) {
-		if _, err := os.Stat(result.TemplateFile); !os.IsNotExist(err) {
-			t.Fatal("template file still exists after uninstall")
-		}
-	}
-
-	configData, err := os.ReadFile(result.ConfigFile)
-	if err != nil {
-		t.Fatalf("read config: %v", err)
-	}
-	if strings.Contains(string(configData), "notify") {
-		t.Fatal("config still has notify line after uninstall")
-	}
-}
-
 func TestUninstallOpenCode(t *testing.T) {
 	root := t.TempDir()
 	dirs := testDirs(root)
@@ -358,7 +281,7 @@ func TestUninstallOpenCodeRemovesLegacyRegistration(t *testing.T) {
 // --- Idempotency tests ---
 
 func TestInstallIdempotent(t *testing.T) {
-	for _, id := range []ID{ClaudeCodeID, CodexID, OpenCodeID} {
+	for _, id := range []ID{ClaudeCodeID, OpenCodeID, AntigravityID} {
 		t.Run(string(id), func(t *testing.T) {
 			root := t.TempDir()
 			dirs := testDirs(root)
@@ -419,18 +342,6 @@ func TestInstallIdempotent(t *testing.T) {
 						t.Fatalf("expected 1 entry for %s, got %d", event, len(entries))
 					}
 				}
-			case CodexID:
-				// Count lines that start with "notify" key assignment.
-				notifyCount := 0
-				for _, line := range strings.Split(string(configData), "\n") {
-					trimmed := strings.TrimSpace(line)
-					if strings.HasPrefix(trimmed, "notify") && strings.Contains(trimmed, "=") {
-						notifyCount++
-					}
-				}
-				if notifyCount != 1 {
-					t.Fatalf("expected 1 notify key line, found %d in:\n%s", notifyCount, string(configData))
-				}
 			}
 		})
 	}
@@ -439,7 +350,7 @@ func TestInstallIdempotent(t *testing.T) {
 // --- E2E lifecycle test ---
 
 func TestLifecycle_InstallDetectUpgradeUninstall(t *testing.T) {
-	for _, id := range []ID{ClaudeCodeID, CodexID, OpenCodeID} {
+	for _, id := range []ID{ClaudeCodeID, OpenCodeID, AntigravityID} {
 		t.Run(string(id), func(t *testing.T) {
 			root := t.TempDir()
 			dirs := testDirs(root)
@@ -555,7 +466,7 @@ func TestLifecycle_InstallDetectUpgradeUninstall(t *testing.T) {
 // --- Upgrade tests ---
 
 func TestUpgrade(t *testing.T) {
-	for _, id := range []ID{ClaudeCodeID, CodexID, OpenCodeID} {
+	for _, id := range []ID{ClaudeCodeID, OpenCodeID, AntigravityID} {
 		t.Run(string(id), func(t *testing.T) {
 			root := t.TempDir()
 			dirs := testDirs(root)

@@ -58,20 +58,6 @@ func TestResolveHideCosts_AutoPolicy(t *testing.T) {
 		{"claude_code nil raw shows",
 			UsageSnapshot{ProviderID: "claude_code"}, false},
 
-		// codex
-		{"codex plus hides",
-			UsageSnapshot{ProviderID: "codex", Raw: map[string]string{"plan_type": "plus"}}, true},
-		{"codex pro hides",
-			UsageSnapshot{ProviderID: "codex", Raw: map[string]string{"plan_type": "pro"}}, true},
-		{"codex team hides",
-			UsageSnapshot{ProviderID: "codex", Raw: map[string]string{"plan_type": "team"}}, true},
-		{"codex enterprise hides",
-			UsageSnapshot{ProviderID: "codex", Raw: map[string]string{"plan_type": "enterprise"}}, true},
-		{"codex free shows",
-			UsageSnapshot{ProviderID: "codex", Raw: map[string]string{"plan_type": "free"}}, false},
-		{"codex unknown plan shows",
-			UsageSnapshot{ProviderID: "codex", Raw: map[string]string{"plan_type": "weird"}}, false},
-
 		// copilot
 		{"copilot individual hides",
 			UsageSnapshot{ProviderID: "copilot", Raw: map[string]string{"copilot_plan": "individual"}}, true},
@@ -82,28 +68,8 @@ func TestResolveHideCosts_AutoPolicy(t *testing.T) {
 		{"copilot free shows",
 			UsageSnapshot{ProviderID: "copilot", Raw: map[string]string{"copilot_plan": "free"}}, false},
 
-		// zai
-		{"zai glm_coding_plan hides",
-			UsageSnapshot{ProviderID: "zai", Raw: map[string]string{"plan_type": "glm_coding_plan"}}, true},
-		{"zai contains glm_coding_plan hides",
-			UsageSnapshot{ProviderID: "zai", Raw: map[string]string{"plan_type": "glm_coding_plan_v2"}}, true},
-		{"zai other plan shows",
-			UsageSnapshot{ProviderID: "zai", Raw: map[string]string{"plan_type": "payg"}}, false},
-
 		// pay-as-you-go / unknown providers default to show
 		{"openai shows", UsageSnapshot{ProviderID: "openai"}, false},
-		{"anthropic shows", UsageSnapshot{ProviderID: "anthropic"}, false},
-		{"openrouter shows", UsageSnapshot{ProviderID: "openrouter"}, false},
-		{"gemini_api shows", UsageSnapshot{ProviderID: "gemini_api"}, false},
-		{"mistral shows", UsageSnapshot{ProviderID: "mistral"}, false},
-		{"groq shows", UsageSnapshot{ProviderID: "groq"}, false},
-		{"deepseek shows", UsageSnapshot{ProviderID: "deepseek"}, false},
-		{"xai shows", UsageSnapshot{ProviderID: "xai"}, false},
-		{"alibaba_cloud shows", UsageSnapshot{ProviderID: "alibaba_cloud"}, false},
-		{"ollama shows", UsageSnapshot{ProviderID: "ollama"}, false},
-		{"aider shows", UsageSnapshot{ProviderID: "aider"}, false},
-		{"moonshot-ai shows", UsageSnapshot{ProviderID: "moonshot-ai"}, false},
-		{"perplexity shows", UsageSnapshot{ProviderID: "perplexity"}, false},
 		{"truly unknown shows", UsageSnapshot{ProviderID: "newprovider123"}, false},
 	}
 	for _, tc := range cases {
@@ -117,9 +83,9 @@ func TestResolveHideCosts_AutoPolicy(t *testing.T) {
 }
 
 func TestResolveHideCosts_PlanCaseInsensitive(t *testing.T) {
-	snap := UsageSnapshot{ProviderID: "codex", Raw: map[string]string{"plan_type": "PRO"}}
+	snap := UsageSnapshot{ProviderID: "copilot", Raw: map[string]string{"copilot_plan": "ENTERPRISE"}}
 	if !ResolveHideCosts(snap, nil, nil) {
-		t.Fatalf("expected uppercase PRO to hide costs")
+		t.Fatalf("expected uppercase ENTERPRISE to hide costs")
 	}
 	snap2 := UsageSnapshot{ProviderID: "claude_code", Raw: map[string]string{"subscription": "Active"}}
 	if !ResolveHideCosts(snap2, nil, nil) {

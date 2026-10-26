@@ -68,10 +68,6 @@ type toolMixEntry struct {
 	count float64
 }
 
-func buildProviderModelCompositionLines(snap core.UsageSnapshot, innerW int, expanded bool) ([]string, map[string]bool) {
-	return buildProviderModelCompositionLinesWithHide(snap, innerW, expanded, false)
-}
-
 // buildProviderModelCompositionLinesWithHide is the hide-costs-aware variant.
 // When hideCosts is true: when burn mode would be "cost", we fall back to
 // "tokens" or "requests" so the section no longer summarises dollars; the

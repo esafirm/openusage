@@ -18,13 +18,6 @@ func TestRequestCollectionCoalescesWithoutMarkingDataIngested(t *testing.T) {
 	}
 }
 
-func TestReadModelCacheLoopDisabledWithoutExporter(t *testing.T) {
-	svc := &Service{}
-	if svc.readModelCacheLoopEnabled() {
-		t.Fatal("local daemon should build the read model on demand")
-	}
-}
-
 func TestTelemetryPayloadMaintenanceBacksOffAfterDrain(t *testing.T) {
 	if got := nextTelemetryPayloadMaintenanceDelay(true); got != 10*time.Minute {
 		t.Fatalf("backlog delay = %s, want 10m", got)

@@ -129,71 +129,11 @@ type DashboardConfig struct {
 	HideCosts *bool `json:"hide_costs,omitempty"`
 }
 
-type ExportConfig struct {
-	Target          string `json:"target"`           // HTTP URL of hub; empty disables export
-	IntervalSeconds int    `json:"interval_seconds"` // push interval; default 60
-	MachineName     string `json:"machine_name"`     // override hostname; empty uses os.Hostname()
-	// AuthToken is the optional Bearer token sent with each push. It must NOT
-	// be persisted to settings.json — supply it via OPENUSAGE_HUB_TOKEN env var
-	// at runtime. Mirrors AccountConfig.Token's `json:"-"` posture.
-	AuthToken string `json:"-"`
-}
-
-type HubConfig struct {
-	ListenAddr          string `json:"listen_addr"`           // TCP address to listen on; default ":9190"
-	StaleTimeoutSeconds int    `json:"stale_timeout_seconds"` // seconds before a machine entry is pruned; default 300
-	// AuthToken is the optional Bearer token required on /v1/push and
-	// /v1/snapshots. It must NOT be persisted to settings.json — supply it via
-	// OPENUSAGE_HUB_TOKEN env var at runtime. Empty disables auth.
-	AuthToken string `json:"-"`
-}
-
 type IntegrationState struct {
 	Installed   bool   `json:"installed"`
 	Version     string `json:"version,omitempty"`
 	InstalledAt string `json:"installed_at,omitempty"`
 	Declined    bool   `json:"declined,omitempty"`
-}
-
-// TmuxConfig holds user-tunable settings for the `openusage tmux` subcommand.
-// All fields are optional; unset values fall through to preset defaults and
-// then to hardcoded defaults inside internal/tmux.
-type TmuxConfig struct {
-	Preset         string               `json:"preset,omitempty"`
-	Format         string               `json:"format,omitempty"`          // overrides preset
-	Provider       string               `json:"provider,omitempty"`        // pin a provider; skips auto-detection
-	ActiveStrategy string               `json:"active_strategy,omitempty"` // comma-separated list; default "recency,priority"
-	PriorityOrder  []string             `json:"priority_order,omitempty"`
-	RecencyWindow  string               `json:"recency_window,omitempty"` // Go duration string, default "4h"
-	ColorMode      string               `json:"color_mode,omitempty"`     // truecolor|256|ansi|none; default truecolor
-	Glyphs         string               `json:"glyphs,omitempty"`         // ascii|unicode|nerdfont
-	Theme          string               `json:"theme,omitempty"`          // empty = inherit Config.Theme
-	Source         string               `json:"source,omitempty"`         // auto|daemon|direct
-	Interval       int                  `json:"interval,omitempty"`       // suggested tmux status-interval; default 5
-	MaxRuntimeMS   int                  `json:"max_runtime_ms,omitempty"` // self-kill budget; default 800
-	Variables      map[string]string    `json:"variables,omitempty"`      // user-defined template variables
-	Segments       map[string]string    `json:"segments,omitempty"`       // user-defined named segments
-	ColorRules     map[string]ColorRule `json:"color_rules,omitempty"`    // threshold-based coloring keyed by variable name
-	Alerts         TmuxAlerts           `json:"alerts,omitempty"`
-}
-
-// ColorRule defines a threshold-based color mapping for the `:color` modifier.
-// Color fields accept theme refs (e.g. "$accent") or hex (e.g. "#FF6600").
-type ColorRule struct {
-	LowAt       float64 `json:"low_at,omitempty"`
-	MediumAt    float64 `json:"medium_at,omitempty"`
-	HighAt      float64 `json:"high_at,omitempty"`
-	LowColor    string  `json:"low_color,omitempty"`
-	MediumColor string  `json:"medium_color,omitempty"`
-	HighColor   string  `json:"high_color,omitempty"`
-}
-
-// TmuxAlerts configures push-alert thresholds for `openusage tmux watch`.
-type TmuxAlerts struct {
-	BurnRatePerHour       float64 `json:"burn_rate_per_hour,omitempty"`
-	BlockMinutesRemaining int     `json:"block_minutes_remaining,omitempty"`
-	CooldownMinutes       int     `json:"cooldown_minutes,omitempty"`
-	Mode                  string  `json:"mode,omitempty"` // message|bell|both|none
 }
 
 type Config struct {
@@ -207,28 +147,23 @@ type Config struct {
 	Accounts             []core.AccountConfig          `json:"accounts"`
 	AutoDetectedAccounts []core.AccountConfig          `json:"auto_detected_accounts"`
 	Integrations         map[string]IntegrationState   `json:"integrations,omitempty"`
-	Export               ExportConfig                  `json:"export,omitempty"`
-	Hub                  HubConfig                     `json:"hub,omitempty"`
-	Tmux                 TmuxConfig                    `json:"tmux,omitempty"`
 }
 
 // DefaultProviderLinks returns built-in telemetry provider-id to dashboard provider-id mappings.
 //
-// Telemetry sources (e.g. the OpenCode plugin) tag events with whatever provider id the
-// source tool uses internally. Those names don't always match openusage's internal provider
-// ids — e.g. OpenCode says "google" for the Gemini API, "github-copilot" for Copilot,
-// and "azure" for Azure OpenAI.
-// These defaults paper over the rename mismatches so users don't see "Unmapped" for
-// providers they have configured under a different name.
+// Telemetry sources tag events with whatever provider id the source tool uses
+// internally. Those names don't always match openusage's internal provider ids.
+// OpenCode, for example, reports "opencode-go" for the Go subscription and
+// "github-copilot" for Copilot. These defaults map the common aliases so the
+// dashboard does not show them as unmapped.
 //
-// Identity links (e.g. openai→openai) are intentionally omitted: the read-time matcher
-// already handles direct id matches, so identity entries would be noise.
+// Identity links (for example openai to openai) are intentionally omitted. The
+// read-time matcher already handles direct id matches.
 func DefaultProviderLinks() map[string]string {
 	return map[string]string{
 		"anthropic":      "claude_code",
-		"google":         "gemini_api",
+		"opencode-go":    "opencode",
 		"github-copilot": "copilot",
-		"azure":          "azure_openai",
 	}
 }
 
@@ -693,18 +628,6 @@ func SaveDashboardHideSectionsWithNoData(hide bool) error {
 func SaveDashboardHideSectionsWithNoDataTo(path string, hide bool) error {
 	return modifyConfig(path, func(cfg *Config) {
 		cfg.Dashboard.HideSectionsWithNoData = hide
-	})
-}
-
-// SaveDashboardHideCosts persists the global hide_costs toggle. Pass nil to clear
-// the override (return to plan-aware auto behavior).
-func SaveDashboardHideCosts(hide *bool) error {
-	return SaveDashboardHideCostsTo(ConfigPath(), hide)
-}
-
-func SaveDashboardHideCostsTo(path string, hide *bool) error {
-	return modifyConfig(path, func(cfg *Config) {
-		cfg.Dashboard.HideCosts = hide
 	})
 }
 

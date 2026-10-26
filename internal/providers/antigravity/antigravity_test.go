@@ -158,9 +158,6 @@ func TestParseStatusLineRejectsMalformedJSON(t *testing.T) {
 	if _, err := New().ParseHookPayload([]byte("not-json"), shared.TelemetryCollectOptions{}); err == nil {
 		t.Fatal("ParseHookPayload() accepted malformed JSON")
 	}
-	if got := RenderStatusLine([]byte("not-json")); got != "AGY" {
-		t.Fatalf("RenderStatusLine(malformed) = %q, want AGY", got)
-	}
 }
 
 func TestFetchIgnoresQuotaWindowsPastReset(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/janekbaraniewski/openusage/internal/config"
@@ -13,11 +14,33 @@ import (
 	"github.com/janekbaraniewski/openusage/internal/telemetry"
 )
 
+const autoDetectTTL = 5 * time.Minute
+
+var (
+	autoDetectMu     sync.Mutex
+	autoDetectAt     time.Time
+	autoDetectResult detect.Result
+)
+
+// cachedAutoDetect keeps the daemon from re-scanning every local tool on each
+// 30s poll. CLI setup commands still call detect.AutoDetect directly so they
+// always see the current machine state.
+func cachedAutoDetect() detect.Result {
+	autoDetectMu.Lock()
+	defer autoDetectMu.Unlock()
+	if !autoDetectAt.IsZero() && time.Since(autoDetectAt) < autoDetectTTL {
+		return autoDetectResult
+	}
+	autoDetectResult = detect.AutoDetect()
+	autoDetectAt = time.Now()
+	return autoDetectResult
+}
+
 func ResolveAccounts(cfg *config.Config) []core.AccountConfig {
 	allAccounts := core.MergeAccounts(cfg.Accounts, cfg.AutoDetectedAccounts)
 
 	if cfg.AutoDetect {
-		result := detect.AutoDetect()
+		result := cachedAutoDetect()
 
 		manualIDs := make(map[string]bool, len(cfg.Accounts))
 		for _, acct := range cfg.Accounts {

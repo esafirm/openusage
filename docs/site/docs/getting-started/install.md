@@ -1,6 +1,6 @@
 ---
 title: Install
-description: Install OpenUsage on macOS, Linux, or Windows via Homebrew, script, or Go.
+description: Install OpenUsage on macOS or Linux via Homebrew, script, or Go.
 sidebar_position: 1
 ---
 
@@ -42,7 +42,7 @@ brew link janekbaraniewski/tap/openusage
 See the [Homebrew Tap Trust docs](https://docs.brew.sh/Tap-Trust) for details.
 :::
 
-## All platforms — install script
+## macOS and Linux — install script
 
 ```bash
 curl -fsSL https://github.com/janekbaraniewski/openusage/releases/latest/download/install.sh | bash
@@ -65,7 +65,6 @@ Available targets:
 
 - `darwin-amd64`, `darwin-arm64`
 - `linux-amd64`, `linux-arm64`
-- `windows-amd64`
 
 ## From source (Go 1.25+)
 
@@ -79,7 +78,6 @@ go install github.com/janekbaraniewski/openusage/cmd/openusage@latest
 - Debian/Ubuntu: `sudo apt install build-essential`
 - Fedora: `sudo dnf install gcc gcc-c++`
 - Arch: `sudo pacman -S base-devel`
-- Windows: install MinGW or MSYS2
 
 ## Verify
 

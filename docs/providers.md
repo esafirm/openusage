@@ -1,226 +1,94 @@
 # Providers
 
-OpenUsage ships with provider integrations covering coding agents, API platforms, and local tools. All providers are auto-detected when available — no manual config needed.
+OpenUsage ships with five provider integrations. All are auto-detected when
+available, so no manual config is needed.
 
-## Coding agents & IDEs
+## Coding agents
 
 ### Claude Code
 
 **Detection:** `claude` binary + `~/.claude` directory
 
-Tracks daily activity, per-model token usage, 5-hour billing block computation, burn rate, and cost estimation.
+Tracks daily activity, per-model token usage, 5-hour billing blocks, burn rate,
+and cost estimates from local stats and conversation JSONL. The optional hook
+integration adds real-time telemetry:
 
-![Claude Code provider](../assets/claudecode.png)
+```bash
+openusage integrations install claude_code
+```
 
-### Cursor
+### OpenCode
 
-**Detection:** `cursor` binary + local SQLite databases
+**Detection:** `OPENCODE_API_KEY` / `ZEN_API_KEY`, `~/.local/share/opencode/auth.json`,
+or an OpenCode Go entry in `auth.json`
 
-Tracks plan spend and limits, per-model aggregation, Composer sessions, and AI code scoring. Uses a hybrid approach — API endpoints plus local SQLite DB reads.
+Tracks OpenCode Go quota (5h, weekly, monthly), Zen models, console balance, and
+monthly usage. Token usage is read from OpenCode's local SQLite store.
 
-![Cursor provider](../assets/cursor.png)
-
-### GitHub Copilot
-
-**Detection:** `gh` CLI with Copilot extension installed
-
-Tracks chat and completions quota, org billing, org metrics, and session tracking.
-
-![Copilot provider](../assets/copilot.png)
-
-### Codex CLI
-
-**Detection:** `codex` binary + `~/.codex` directory
-
-Tracks session tokens, per-model and per-client breakdown, credits, and rate limits.
-
-![Codex CLI provider](../assets/codex.png)
-
-### Command Code
-
-**Detection:** `COMMAND_CODE_API_KEY` environment variable, `~/.commandcode/auth.json`, or the `command-code` / `cmd` / `cmdc` binary
-
-Tracks the credit balance, rolling 5-hour and weekly usage windows (percent used, cap, reset time), plan and billing period, and billing-period/today spend, requests, and tokens from the Command Code billing API. The CLI's stored API key is adopted automatically when present.
-
-### Gemini CLI
-
-**Detection:** `gemini` binary + `~/.gemini` directory
-
-Tracks OAuth status, conversation count, per-model tokens, and quota API data.
-
-![Gemini CLI provider](../assets/gemini.png)
+OpenCode Go quota comes from the OpenCode console and needs a browser session.
+Open the dashboard, go to **Settings -> 5 KEYS -> opencode**, and press `c` to
+import the session cookie.
 
 ### Antigravity CLI
 
 **Detection:** `agy` binary + `~/.gemini/antigravity-cli` directory
 
-Tracks status-line context usage, session tokens, model quotas, workspace, and agent state without reading credentials or estimating spend.
+Tracks status-line context usage, session tokens, model quotas, workspace, and
+agent state without reading credentials or estimating spend.
 
-### OpenCode
+```bash
+openusage integrations install antigravity
+```
 
-**Detection:** `OPENCODE_API_KEY` or `ZEN_API_KEY` environment variable
+### GitHub Copilot
 
-Tracks credits, activity, and generation stats via an OpenRouter-compatible API.
+**Detection:** `copilot` binary + `~/.copilot` directory, or the `gh copilot`
+extension
 
-### Ollama
-
-**Detection:** `OLLAMA_HOST` environment variable or `ollama` binary
-
-Tracks local server models, per-model usage, and optional cloud billing.
+Tracks Copilot quota, org billing, org metrics, and session usage. The provider
+uses the standalone `copilot` binary when present and falls back to `gh` when it
+needs GitHub API data.
 
 ## API platforms
-
-### OpenRouter
-
-**Detection:** `OPENROUTER_API_KEY` environment variable
-
-Tracks credits, activity, generation stats, and per-model breakdown across multiple API endpoints.
-
-![OpenRouter provider](../assets/openrouter.png)
 
 ### OpenAI
 
 **Detection:** `OPENAI_API_KEY` environment variable
 
-Tracks rate limits via lightweight header probing.
+Tracks rate limits via lightweight header probing. This provider reports RPM and
+TPM limits, not spend or token history.
 
-### Anthropic
+## Browser-session auth
 
-**Detection:** `ANTHROPIC_API_KEY` environment variable
+Some console-only data is gated by a web session cookie. OpenUsage supports a
+"connect via browser" flow that reads the session cookie from your chosen
+browser's cookie store:
 
-Tracks rate limits via lightweight header probing.
+1. Open **Settings -> 5 KEYS**.
+2. Move to the provider row.
+3. Press `c` for mixed-auth providers such as OpenCode.
+4. Pick the browser.
 
-### Azure OpenAI
+The cookie is stored in `credentials.json` with `0600` permissions and scoped to
+one `(domain, cookie name)` pair. It is never sent anywhere except the provider's
+console. macOS may ask for Keychain access the first time OpenUsage reads a
+Chrome cookie store.
 
-**Detection:** `AZURE_OPENAI_API_KEY` or `AZURE_API_KEY`, plus `AZURE_RESOURCE_NAME` (or `AZURE_OPENAI_ENDPOINT`) for the endpoint
+Currently shipping:
 
-Tracks rate limits via lightweight header probing against your Azure OpenAI resource endpoint. Shares OpenCode's `AZURE_API_KEY` / `AZURE_RESOURCE_NAME` variables, and a built-in `azure` → `azure_openai` telemetry link routes Azure-via-OpenCode usage onto this tile automatically.
+- OpenCode -> `opencode.ai` for balance, monthly limit, subscription, and
+  OpenCode Go quota.
 
-### Groq
+## OpenCode credential adoption
 
-**Detection:** `GROQ_API_KEY` environment variable
+If OpenCode is installed and you have authenticated any of its providers,
+OpenUsage reads `~/.local/share/opencode/auth.json` and adopts API keys for the
+providers this build supports:
 
-Tracks rate limits and daily usage windows.
-
-### Mistral AI
-
-**Detection:** `MISTRAL_API_KEY` environment variable
-
-Tracks subscription info and usage endpoints.
-
-### DeepSeek
-
-**Detection:** `DEEPSEEK_API_KEY` environment variable
-
-Tracks rate limits and account balance.
-
-### Browser-session auth (universal mechanism)
-
-For providers whose billing / usage / account data is gated by web-console
-session cookies and never exposed via API key, openusage supports a
-"connect via browser" flow that reads the session cookie directly out of
-your chosen browser's cookie jar (Chrome / Firefox / Safari / Edge /
-Brave on macOS / Linux / Windows).
-
-**How to connect**: Settings → 5 KEYS → navigate to the provider row →
-press Enter for browser-session-only providers (for example Perplexity),
-or press `c` on mixed-auth providers (for example OpenCode). Openusage
-opens a browser picker, reads the `(domain, cookie name)` pair declared by
-the provider, stores the cookie in `credentials.json` with `0600`
-permissions, and uses it on every poll. When the cookie expires, the tile
-transitions to AUTH with a "re-login at console.X.com" hint; logging into
-the site again in your browser refreshes openusage on the next poll
-automatically.
-
-**Privacy**: opt-in per-account, scoped to a single (domain, cookie name)
-pair, never sent off-machine. macOS will prompt for Keychain access the
-first time openusage reads Chrome's cookie store; that's the OS-level
-consent gate.
-
-**Cookie auth currently shipping** (full implementation):
-- Perplexity → `console.perplexity.ai` — tier, balance, spend, analytics
-- OpenCode → `opencode.ai/_server` — balance, monthly limit, subscription
-
-**Cookie auth in progress** (HAR captured, RPC client needed):
-- Google AI Studio → `aistudio.google.com` — per-project quotas (needs
-  SAPISIDHASH + MakerSuite tuple decoding; captured 2026-04-30)
-- ChatGPT consumer → `chatgpt.com` — Plus/Team plan + message quotas
-  (HAR captured but thin; needs re-capture from Settings → Subscription
-  pages)
-
-**Cookie auth planned** (no HAR yet — capture and submit a HAR to enable):
-- OpenAI Platform → `platform.openai.com` — usage, billing, models
-- Anthropic Console → `console.anthropic.com` — org usage, billing
-- Mistral Console → `console.mistral.ai` — billing, per-model spend
-- Groq Console → `console.groq.com` — usage, billing
-- xAI Console → `console.x.ai` — credit balance, usage breakdown
-- DeepSeek Platform → `platform.deepseek.com` — extended usage history
-- Z.AI Console → `open.bigmodel.cn` — usage detail
-- Alibaba Cloud Console → `console.aliyun.com` — DashScope billing
-
-To add one of these: capture a HAR file from your logged-in browser on
-the site (covering the Usage / Billing / Account pages), drop at
-`~/Downloads/<host>.har`, and we wire up the RPC client + parser.
-
-### OpenCode credential adoption (cross-provider)
-
-If [OpenCode](https://opencode.ai) is installed and you've authed any
-of its providers, openusage will read `~/.local/share/opencode/auth.json`
-on startup and adopt the API keys it finds. Currently maps:
-
-| OpenCode entry | openusage account |
+| OpenCode entry | OpenUsage account |
 |---|---|
-| `moonshotai` (api) | `moonshot-ai` (provider `moonshot`) |
-| `openrouter` (api) | `openrouter` |
-| `zai` (api) | `zai` |
 | `opencode` (api) | `opencode` |
-| `ollama-cloud` (api) | `ollama-cloud` (provider `ollama`) |
+| `opencode-go` (api) | `opencode` with the Go plan hint |
 
-OAuth-typed entries (`anthropic`, `openai`, `google`, `cursor`) are skipped:
-they're chat-scoped tokens, not the API-key shape openusage's poll-time probes
-expect. Env-var detection runs first; if both are present the env var wins.
-
-### Perplexity
-
-**Detection:** browser-session cookie from `console.perplexity.ai` (Settings → 5 KEYS → perplexity → Enter).
-
-Browser-session-auth-only — Perplexity's API key is chat-only. Tile surfaces tier (0–5), available balance, lifetime spend, auto-reload settings, payment method, and 30-day analytics (api_requests, input/output/reasoning tokens, search queries) from the console RPCs at `/rest/pplx-api/v2/groups/<org_id>/...`.
-
-### OpenCode (Zen + Console)
-
-**Detection:** `OPENCODE_API_KEY` / `ZEN_API_KEY` env var for chat-surface auth, optionally a browser-session cookie from `opencode.ai` for billing data.
-
-Two-tier auth. The API key probes `/zen/v1/models` for chat-side validation and surfaces the available Zen model count. When connected via browser session (Settings → 5 KEYS → opencode → `c`), the tile gains balance, monthly limit / monthly usage, auto-reload settings, payment method, and subscription state from the SolidStart server-fn endpoints at `opencode.ai/_server`.
-Openusage auto-discovers the active workspace ID from the authenticated console redirect, so no extra account hint is required for console enrichment.
-
-### Moonshot (Kimi)
-
-**Detection:** `MOONSHOT_API_KEY` environment variable
-
-Tracks balance breakdown (`available_balance` = `cash_balance` + `voucher_balance`), org-level rate caps (`max_request_per_minute`, `max_token_per_minute`, `max_concurrency`, `max_token_quota`), tier (`user_group_id`), and account metadata (org id, project id, masked access key).
-
-By default targets `api.moonshot.ai` (international, USD). For Moonshot.cn (China, CNY) add a second account in `settings.json` with `"base_url": "https://api.moonshot.cn"`.
-
-### xAI (Grok)
-
-**Detection:** `XAI_API_KEY` environment variable
-
-Tracks rate limits and API key info.
-
-### Z.AI Coding Plan
-
-**Detection:** `ZAI_API_KEY` / `ZHIPUAI_API_KEY` environment variable, or `~/.chelper/config.yaml`
-
-Tracks coding-plan quota limits, model/tool usage, daily trend series, and optional credit balance metadata.
-
-### Google Gemini API
-
-**Detection:** `GEMINI_API_KEY` or `GOOGLE_API_KEY` environment variable
-
-Tracks rate limits and per-model limits.
-
-### Alibaba Cloud
-
-**Detection:** `ALIBABA_CLOUD_API_KEY` environment variable
-
-Tracks quotas, credits, daily usage, and per-model tracking.
+OAuth-typed entries are skipped. Environment variables are checked first and win
+over `auth.json`.

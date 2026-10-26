@@ -30,7 +30,7 @@ func TestAllTelemetrySources_DerivedFromProviderRegistry(t *testing.T) {
 		found[source.System()] = true
 	}
 
-	for _, want := range []string{"codex", "claude_code", "opencode", "antigravity"} {
+	for _, want := range []string{"claude_code", "opencode", "antigravity", "copilot"} {
 		if !found[want] {
 			t.Fatalf("missing telemetry source %q", want)
 		}
@@ -38,12 +38,12 @@ func TestAllTelemetrySources_DerivedFromProviderRegistry(t *testing.T) {
 }
 
 func TestTelemetrySourceBySystem_CaseInsensitive(t *testing.T) {
-	source, ok := TelemetrySourceBySystem("CoDeX")
+	source, ok := TelemetrySourceBySystem("OpEnCoDe")
 	if !ok {
-		t.Fatalf("expected codex source")
+		t.Fatalf("expected opencode source")
 	}
-	if source.System() != "codex" {
-		t.Fatalf("source.system = %q, want codex", source.System())
+	if source.System() != "opencode" {
+		t.Fatalf("source.system = %q, want opencode", source.System())
 	}
 }
 

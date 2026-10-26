@@ -744,10 +744,6 @@ func (m *Model) applyWidgetSectionOverrides() {
 	setDashboardWidgetSectionOverrides(visible)
 }
 
-func (m Model) defaultWidgetSectionEntries() []config.DashboardWidgetSection {
-	return defaultSections(dashboardSectionTrait)
-}
-
 func (m Model) widgetSectionEntries() []config.DashboardWidgetSection {
 	return m.resolvedWidgetSectionEntries()
 }
@@ -802,10 +798,6 @@ func (m *Model) applyDetailWidgetSectionOverrides() {
 		visible = append(visible, entry.ID)
 	}
 	setDetailSectionOverrides(visible)
-}
-
-func (m Model) defaultDetailWidgetSectionEntries() []config.DetailWidgetSection {
-	return defaultSections(detailSectionTrait)
 }
 
 func (m Model) detailWidgetSectionEntries() []config.DetailWidgetSection {
@@ -931,19 +923,6 @@ func (m Model) telemetryUnmappedDetails() []TelemetryUnmappedDetail {
 		out = append(out, seen[k])
 	}
 	return out
-}
-
-func (m Model) telemetryProviderLinkHints() []string {
-	seen := make(map[string]bool)
-	for _, snap := range m.snapshots {
-		hint := strings.TrimSpace(snap.Diagnostics["telemetry_provider_link_hint"])
-		if hint == "" {
-			continue
-		}
-		seen[hint] = true
-	}
-
-	return core.SortedStringKeys(seen)
 }
 
 func (m Model) configuredProviderIDs() []string {

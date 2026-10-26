@@ -36,13 +36,6 @@ func autoHideCosts(snap UsageSnapshot) bool {
 		// cost is informational only and confuses users who do not see those
 		// dollars on their statement.
 		return strings.EqualFold(snap.Raw["subscription"], "active")
-	case "codex":
-		plan := strings.ToLower(strings.TrimSpace(snap.Raw["plan_type"]))
-		switch plan {
-		case "plus", "pro", "team", "enterprise":
-			return true
-		}
-		return false
 	case "copilot":
 		plan := strings.ToLower(strings.TrimSpace(snap.Raw["copilot_plan"]))
 		switch plan {
@@ -50,9 +43,6 @@ func autoHideCosts(snap UsageSnapshot) bool {
 			return true
 		}
 		return false
-	case "zai":
-		plan := strings.ToLower(strings.TrimSpace(snap.Raw["plan_type"]))
-		return strings.Contains(plan, "glm_coding_plan")
 	}
 	return false
 }

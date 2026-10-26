@@ -18,10 +18,6 @@ type sourceCollectorSpec struct {
 	accountID string
 }
 
-func buildCollectors(accounts []core.AccountConfig) ([]telemetry.Collector, []string) {
-	return buildCollectorsFromSources(accounts, telemetrySourcesBySystem())
-}
-
 func buildCollectorsFromSources(
 	accounts []core.AccountConfig,
 	sources map[string]shared.TelemetrySource,
@@ -100,10 +96,6 @@ func resolveTelemetrySourceOptionsFromAccounts(
 	default:
 		return defaults, "", []string{"multiple telemetry accounts configured for source; account override required for precise hook attribution"}
 	}
-}
-
-func buildSourceCollectorSpecs(accounts []core.AccountConfig) ([]sourceCollectorSpec, []string) {
-	return buildSourceCollectorSpecsFromSources(accounts, telemetrySourcesBySystem())
 }
 
 func buildSourceCollectorSpecsFromSources(

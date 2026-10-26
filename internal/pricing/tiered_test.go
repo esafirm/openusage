@@ -67,26 +67,3 @@ func TestApplyTier_NoOverrides(t *testing.T) {
 		t.Errorf("expected base rates; got %+v", got)
 	}
 }
-
-func TestResolveTier(t *testing.T) {
-	ladder := []TieredPrice{
-		{AppliesAbove: 0, Price: Price{InputCostPerMillion: 1}},
-		{AppliesAbove: 200_000, Price: Price{InputCostPerMillion: 2}},
-		{AppliesAbove: 1_000_000, Price: Price{InputCostPerMillion: 3}},
-	}
-	if got := ResolveTier(ladder, 50_000).InputCostPerMillion; got != 1 {
-		t.Errorf("low tier = %v, want 1", got)
-	}
-	if got := ResolveTier(ladder, 200_000).InputCostPerMillion; got != 1 {
-		t.Errorf("boundary tier (exclusive) = %v, want 1", got)
-	}
-	if got := ResolveTier(ladder, 200_001).InputCostPerMillion; got != 2 {
-		t.Errorf("mid tier = %v, want 2", got)
-	}
-	if got := ResolveTier(ladder, 2_000_000).InputCostPerMillion; got != 3 {
-		t.Errorf("top tier = %v, want 3", got)
-	}
-	if got := ResolveTier(nil, 0); got.InputCostPerMillion != 0 {
-		t.Errorf("empty ladder should be zero price")
-	}
-}

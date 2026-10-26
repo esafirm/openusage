@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/janekbaraniewski/openusage/internal/core"
-	"github.com/janekbaraniewski/openusage/internal/exporter"
 	"github.com/janekbaraniewski/openusage/internal/providers"
 	"github.com/janekbaraniewski/openusage/internal/providers/shared"
 	"github.com/janekbaraniewski/openusage/internal/telemetry"
@@ -33,7 +32,6 @@ type Service struct {
 	quotaIngest      *telemetry.QuotaSnapshotIngestor
 	providerByID     map[string]core.UsageProvider
 	telemetrySources map[string]shared.TelemetrySource
-	exp              *exporter.Exporter
 
 	spoolMu     sync.Mutex // guards spool filesystem operations (read/write/cleanup)
 	logThrottle *core.LogThrottle
@@ -87,9 +85,8 @@ func RunServer(cfg Config) error {
 	}
 
 	// Pull in API keys / settings captured at `daemon install` time. No-op when
-	// the var is already set in the environment (e.g. injected by systemd/launchd
-	// or exported in the shell); the primary beneficiary is the Windows scheduled
-	// task, which can't inject an env file itself.
+	// the var is already set in the environment (e.g. injected by systemd or
+	// launchd, or exported in the shell).
 	LoadServiceEnv()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -143,15 +140,6 @@ func startService(ctx context.Context, cfg Config) (*Service, error) {
 		log.Printf("[daemon] warning: migrations failed: %v", err)
 	}
 
-	var exp *exporter.Exporter
-	if cfg.Export.Target != "" {
-		if e, err := exporter.New(cfg.Export); err != nil {
-			log.Printf("exporter: init failed: %v", err)
-		} else {
-			exp = e
-		}
-	}
-
 	telemetrySources := telemetrySourcesBySystem()
 	svc := &Service{
 		cfg:              cfg,
@@ -161,7 +149,6 @@ func startService(ctx context.Context, cfg Config) (*Service, error) {
 		quotaIngest:      telemetry.NewQuotaSnapshotIngestor(store),
 		providerByID:     providersByID(),
 		telemetrySources: telemetrySources,
-		exp:              exp,
 		logThrottle:      core.NewLogThrottle(200, 10*time.Minute),
 		rmCache:          newReadModelCache(),
 		collectNow:       make(chan struct{}, 1),
@@ -197,16 +184,11 @@ func startService(ctx context.Context, cfg Config) (*Service, error) {
 	})
 	go svc.runCollectLoop(ctx)
 	go svc.runPollLoop(ctx)
-	go svc.runReadModelCacheLoop(ctx)
 	go svc.runWatchLoop(ctx)
 	go svc.runSpoolMaintenanceLoop(ctx)
 	go svc.runHookSpoolLoop(ctx)
 	go svc.runRetentionLoop(ctx)
 	go svc.runTelemetryPayloadMaintenanceLoop(ctx)
-
-	if svc.exp != nil {
-		go svc.exp.Start(ctx)
-	}
 
 	return svc, nil
 }

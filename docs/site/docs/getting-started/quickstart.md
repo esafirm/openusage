@@ -31,7 +31,7 @@ openusage
 That's it. OpenUsage:
 
 1. Scans your environment for AI-tool API keys (e.g. `OPENAI_API_KEY`, `OPENROUTER_API_KEY`)
-2. Looks for installed binaries and config dirs (e.g. `claude`, `cursor`, `~/.codex`)
+2. Looks for installed binaries and config dirs (for example `claude`, `copilot`, `agy`)
 3. Registers a provider account for each thing it finds
 4. Connects to the daemon over its Unix socket and renders the read model
 
@@ -88,11 +88,11 @@ You can also paste keys interactively from the **API Keys** tab in the settings 
 
 ## 6. Install agent integrations
 
-For richer per-session detail from Claude Code, Codex, and OpenCode, install their hooks. They post each turn directly to the daemon, giving you per-message data that polling alone cannot see.
+For richer per-session detail from Claude Code, OpenCode, and Antigravity, install their hooks. They post each turn directly to the daemon, giving you per-message data that polling alone cannot see.
 
 ```bash
 openusage integrations install claude_code   # if you use Claude Code
-openusage integrations install codex          # if you use Codex CLI
+openusage integrations install claude_code    # if you use Claude Code
 openusage integrations install opencode       # if you use OpenCode
 ```
 

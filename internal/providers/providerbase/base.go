@@ -142,12 +142,6 @@ func WithRawGroups(groups ...core.DashboardRawGroup) DashboardOption {
 	}
 }
 
-func WithSuppressZeroMetricKeys(keys ...string) DashboardOption {
-	return func(cfg *core.DashboardWidget) {
-		cfg.SuppressZeroMetricKeys = keys
-	}
-}
-
 // CodingToolDashboard returns a DashboardWidget pre-configured for coding-tool
 // providers (Cursor, Claude Code, Codex, Copilot, Gemini CLI). It enables client/
 // language/code-stats composition panels, applies standard hidden prefixes and

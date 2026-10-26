@@ -9,25 +9,25 @@ import (
 )
 
 func TestBuildCollectors_ScopesConfiguredAccount(t *testing.T) {
-	collectors, warnings := buildCollectors([]core.AccountConfig{
+	collectors, warnings := buildCollectorsFromSources([]core.AccountConfig{
 		{
-			ID:       "codex-main",
-			Provider: "codex",
+			ID:       "opencode-main",
+			Provider: "opencode",
 			RuntimeHints: map[string]string{
-				"sessions_dir": "/tmp/codex-main",
+				"db_path": "/tmp/opencode-main",
 			},
 		},
-	})
+	}, telemetrySourcesBySystem())
 
-	collector := findSourceCollector(t, collectors, "codex")
-	if collector.AccountOverride != "codex-main" {
-		t.Fatalf("account override = %q, want codex-main", collector.AccountOverride)
+	collector := findSourceCollector(t, collectors, "opencode")
+	if collector.AccountOverride != "opencode-main" {
+		t.Fatalf("account override = %q, want opencode-main", collector.AccountOverride)
 	}
-	if got := collector.Options.Paths["account_id"]; got != "codex-main" {
-		t.Fatalf("account_id option = %q, want codex-main", got)
+	if got := collector.Options.Paths["account_id"]; got != "opencode-main" {
+		t.Fatalf("account_id option = %q, want opencode-main", got)
 	}
-	if got := collector.Options.Paths["sessions_dir"]; got != "/tmp/codex-main" {
-		t.Fatalf("sessions_dir = %q, want /tmp/codex-main", got)
+	if got := collector.Options.Paths["db_path"]; got != "/tmp/opencode-main" {
+		t.Fatalf("db_path = %q, want /tmp/opencode-main", got)
 	}
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %v, want none", warnings)
@@ -35,12 +35,12 @@ func TestBuildCollectors_ScopesConfiguredAccount(t *testing.T) {
 }
 
 func TestBuildCollectors_AmbiguousAccountsFallBackToSourceScope(t *testing.T) {
-	collectors, warnings := buildCollectors([]core.AccountConfig{
-		{ID: "codex-a", Provider: "codex"},
-		{ID: "codex-b", Provider: "codex"},
-	})
+	collectors, warnings := buildCollectorsFromSources([]core.AccountConfig{
+		{ID: "opencode-a", Provider: "opencode"},
+		{ID: "opencode-b", Provider: "opencode"},
+	}, telemetrySourcesBySystem())
 
-	collector := findSourceCollector(t, collectors, "codex")
+	collector := findSourceCollector(t, collectors, "opencode")
 	if collector.AccountOverride != "" {
 		t.Fatalf("account override = %q, want empty", collector.AccountOverride)
 	}
@@ -61,44 +61,44 @@ func TestBuildCollectorsFromSourcesReusesTelemetrySourceInstances(t *testing.T) 
 		t.Fatalf("warnings = %v, %v; want none", firstWarnings, secondWarnings)
 	}
 
-	firstCodex := findSourceCollector(t, first, "codex")
-	secondCodex := findSourceCollector(t, second, "codex")
-	if firstCodex.Source != secondCodex.Source {
-		t.Fatal("codex telemetry source was recreated between collector builds")
+	firstOpenCode := findSourceCollector(t, first, "opencode")
+	secondOpenCode := findSourceCollector(t, second, "opencode")
+	if firstOpenCode.Source != secondOpenCode.Source {
+		t.Fatal("opencode telemetry source was recreated between collector builds")
 	}
 }
 
 func TestResolveTelemetrySourceOptionsFromAccounts_UsesExplicitAccount(t *testing.T) {
-	source, ok := providers.TelemetrySourceBySystem("codex")
+	source, ok := providers.TelemetrySourceBySystem("opencode")
 	if !ok {
-		t.Fatal("codex telemetry source not found")
+		t.Fatal("opencode telemetry source not found")
 	}
 
 	options, accountID, warnings := resolveTelemetrySourceOptionsFromAccounts(source, []core.AccountConfig{
 		{
-			ID:       "codex-a",
-			Provider: "codex",
+			ID:       "opencode-a",
+			Provider: "opencode",
 			RuntimeHints: map[string]string{
-				"sessions_dir": "/tmp/codex-a",
+				"db_path": "/tmp/opencode-a",
 			},
 		},
 		{
-			ID:       "codex-b",
-			Provider: "codex",
+			ID:       "opencode-b",
+			Provider: "opencode",
 			RuntimeHints: map[string]string{
-				"sessions_dir": "/tmp/codex-b",
+				"db_path": "/tmp/opencode-b",
 			},
 		},
-	}, "codex-b")
+	}, "opencode-b")
 
-	if accountID != "codex-b" {
-		t.Fatalf("account id = %q, want codex-b", accountID)
+	if accountID != "opencode-b" {
+		t.Fatalf("account id = %q, want opencode-b", accountID)
 	}
-	if got := options.Paths["sessions_dir"]; got != "/tmp/codex-b" {
-		t.Fatalf("sessions_dir = %q, want /tmp/codex-b", got)
+	if got := options.Paths["db_path"]; got != "/tmp/opencode-b" {
+		t.Fatalf("db_path = %q, want /tmp/opencode-b", got)
 	}
-	if got := options.Paths["account_id"]; got != "codex-b" {
-		t.Fatalf("account_id option = %q, want codex-b", got)
+	if got := options.Paths["account_id"]; got != "opencode-b" {
+		t.Fatalf("account_id option = %q, want opencode-b", got)
 	}
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %v, want none", warnings)

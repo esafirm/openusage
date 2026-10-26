@@ -13,13 +13,7 @@
     "enabled": true,
     "group_by": "lineage",
     "min_confidence": 0.80,
-    "overrides": [
-      {
-        "provider": "cursor",
-        "raw_model_id": "claude-4.6-opus-high-thinking",
-        "canonical_lineage_id": "anthropic/claude-opus-4.6"
-      }
-    ]
+    "overrides": []
   },
   "dashboard": {
     "hide_costs": null,
@@ -29,12 +23,11 @@
         "enabled": true
       },
       {
-        "account_id": "anthropic-work",
-        "enabled": true,
-        "hide_costs": true
+        "account_id": "opencode",
+        "enabled": true
       },
       {
-        "account_id": "openrouter",
+        "account_id": "copilot",
         "enabled": false
       }
     ],
@@ -70,91 +63,14 @@
       "probe_model": "gpt-4.1-mini"
     },
     {
-      "id": "anthropic-work",
-      "provider": "anthropic",
-      "api_key_env": "ANTHROPIC_API_KEY"
+      "id": "opencode",
+      "provider": "opencode",
+      "api_key_env": "OPENCODE_API_KEY"
     },
     {
-      "id": "azure-openai",
-      "provider": "azure_openai",
-      "api_key_env": "AZURE_OPENAI_API_KEY",
-      "base_url": "https://my-resource.openai.azure.com"
-    },
-    {
-      "id": "openrouter",
-      "provider": "openrouter",
-      "api_key_env": "OPENROUTER_API_KEY"
-    },
-    {
-      "id": "groq",
-      "provider": "groq",
-      "api_key_env": "GROQ_API_KEY",
-      "probe_model": "llama-3.3-70b-versatile"
-    },
-    {
-      "id": "mistral",
-      "provider": "mistral",
-      "api_key_env": "MISTRAL_API_KEY"
-    },
-    {
-      "id": "deepseek",
-      "provider": "deepseek",
-      "api_key_env": "DEEPSEEK_API_KEY"
-    },
-    {
-      "id": "moonshot-ai",
-      "provider": "moonshot",
-      "api_key_env": "MOONSHOT_API_KEY"
-    },
-    {
-      "id": "perplexity",
-      "provider": "perplexity",
-      "auth": "browser_session",
-      "browser_cookie": {
-        "domain": ".perplexity.ai",
-        "cookie_name": "__Secure-next-auth.session-token",
-        "source_browser": "chrome"
-      }
-    },
-    {
-      "id": "moonshot-cn",
-      "provider": "moonshot",
-      "api_key_env": "MOONSHOT_API_KEY",
-      "base_url": "https://api.moonshot.cn"
-    },
-    {
-      "id": "xai-grok",
-      "provider": "xai",
-      "api_key_env": "XAI_API_KEY"
-    },
-    {
-      "id": "zai",
-      "provider": "zai",
-      "api_key_env": "ZAI_API_KEY"
-    },
-    {
-      "id": "ollama-local",
-      "provider": "ollama",
-      "base_url": "http://127.0.0.1:11434",
-      "api_key_env": "OLLAMA_API_KEY"
-    },
-    {
-      "id": "ollama-cloud",
-      "provider": "ollama",
-      "auth": "api_key",
-      "base_url": "https://ollama.com",
-      "api_key_env": "OLLAMA_API_KEY"
-    },
-    {
-      "id": "gemini-api",
-      "provider": "gemini_api",
-      "api_key_env": "GEMINI_API_KEY",
-      "probe_model": "gemini-2.0-flash"
-    },
-    {
-      "id": "gemini-cli",
-      "provider": "gemini_cli",
-      "binary": "gemini"
+      "id": "claude-code",
+      "provider": "claude_code",
+      "auth": "local"
     },
     {
       "id": "antigravity",
@@ -165,38 +81,15 @@
     {
       "id": "copilot",
       "provider": "copilot",
-      "binary": "gh"
-    },
-    {
-      "id": "alibaba_cloud",
-      "provider": "alibaba_cloud",
-      "api_key_env": "ALIBABA_CLOUD_API_KEY"
-    },
-    {
-      "id": "command_code",
-      "provider": "command_code",
-      "api_key_env": "COMMAND_CODE_API_KEY"
+      "binary": "copilot"
     }
   ],
   "auto_detected_accounts": [],
-  "export": {
-    "target": "",
-    "interval_seconds": 60,
-    "machine_name": ""
-  },
-  "hub": {
-    "listen_addr": ":9190",
-    "stale_timeout_seconds": 300
-  },
   "integrations": {
-    "claude-code-hooks": {
+    "claude_code": {
       "installed": true,
       "version": "1.0.0",
       "installed_at": "2025-01-15T10:30:00Z"
-    },
-    "cursor-rules": {
-      "installed": false,
-      "declined": true
     }
   }
 }

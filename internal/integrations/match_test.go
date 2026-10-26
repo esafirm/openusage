@@ -23,11 +23,9 @@ func TestMatchDetected_AccountsByProviderID(t *testing.T) {
 	detected := detect.Result{
 		Tools: []detect.DetectedTool{
 			{Name: "Claude Code CLI", BinaryPath: "/usr/bin/claude", Type: "cli"},
-			{Name: "OpenAI Codex CLI", BinaryPath: "/usr/bin/codex", Type: "cli"},
 		},
 		Accounts: []core.AccountConfig{
 			{ID: "claude_code", Provider: "claude_code"},
-			{ID: "codex", Provider: "codex"},
 			{ID: "opencode", Provider: "opencode"},
 		},
 	}
@@ -44,10 +42,6 @@ func TestMatchDetected_AccountsByProviderID(t *testing.T) {
 		case ClaudeCodeID:
 			if m.Account == nil || m.Account.Provider != "claude_code" {
 				t.Errorf("claude_code: expected account with Provider=claude_code, got %v", m.Account)
-			}
-		case CodexID:
-			if m.Account == nil || m.Account.Provider != "codex" {
-				t.Errorf("codex: expected account with Provider=codex, got %v", m.Account)
 			}
 		case OpenCodeID:
 			if m.Account == nil || m.Account.Provider != "opencode" {
@@ -251,7 +245,6 @@ func TestMatchDetected_ToolNameMatching(t *testing.T) {
 	detected := detect.Result{
 		Tools: []detect.DetectedTool{
 			{Name: "Claude Code CLI", BinaryPath: "/usr/bin/claude", Type: "cli"},
-			{Name: "OpenAI Codex CLI", BinaryPath: "/usr/bin/codex", Type: "cli"},
 			{Name: "Unrelated Tool", BinaryPath: "/usr/bin/other", Type: "cli"},
 		},
 	}
@@ -267,13 +260,6 @@ func TestMatchDetected_ToolNameMatching(t *testing.T) {
 				t.Error("claude_code: expected tool match for 'Claude Code CLI' with hint 'Claude Code'")
 			} else if !strings.Contains(m.Tool.Name, "Claude Code") {
 				t.Errorf("claude_code: expected tool name containing 'Claude Code', got %q", m.Tool.Name)
-			}
-		case CodexID:
-			// MatchToolNameHint is "Codex", tool Name is "OpenAI Codex CLI"
-			if m.Tool == nil {
-				t.Error("codex: expected tool match for 'OpenAI Codex CLI' with hint 'Codex'")
-			} else if !strings.Contains(m.Tool.Name, "Codex") {
-				t.Errorf("codex: expected tool name containing 'Codex', got %q", m.Tool.Name)
 			}
 		case OpenCodeID:
 			// MatchToolNameHint is "", so no tool match expected

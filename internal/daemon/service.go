@@ -20,10 +20,6 @@ import (
 const (
 	LaunchdDaemonLabel = "com.openusage.telemetryd"
 	SystemdDaemonUnit  = "openusage-telemetry.service"
-	// WindowsScheduledTask is the Task Scheduler task name used on Windows. A
-	// logon-triggered scheduled task running in the user session is the analogue
-	// of the launchd LaunchAgent / systemd --user unit on macOS / Linux.
-	WindowsScheduledTask = "OpenUsage Telemetry Daemon"
 )
 
 type ServiceManager struct {
@@ -61,8 +57,6 @@ func (m ServiceManager) StatusHint() string {
 		return "launchctl print gui/$(id -u)/" + LaunchdDaemonLabel
 	case "linux":
 		return "systemctl --user status " + SystemdDaemonUnit
-	case "windows":
-		return `schtasks /Query /TN "` + WindowsScheduledTask + `" /V /FO LIST`
 	default:
 		return ""
 	}
@@ -137,10 +131,6 @@ func NewServiceManager(socketPath string) (ServiceManager, error) {
 			return ServiceManager{}, fmt.Errorf("resolve home dir: %w", err)
 		}
 		manager.unitPath = filepath.Join(home, ".config", "systemd", "user", SystemdDaemonUnit)
-	case "windows":
-		// The scheduled task isn't a file; we write the generated task XML here
-		// at install time so IsInstalled()/diagnostics have a stable marker.
-		manager.unitPath = filepath.Join(stateDir, "daemon.task.xml")
 	default:
 		manager.Kind = "unsupported"
 	}
@@ -148,7 +138,7 @@ func NewServiceManager(socketPath string) (ServiceManager, error) {
 }
 
 func (m ServiceManager) IsSupported() bool {
-	return m.Kind == "darwin" || m.Kind == "linux" || m.Kind == "windows"
+	return m.Kind == "darwin" || m.Kind == "linux"
 }
 
 func (m ServiceManager) IsInstalled() bool {
@@ -378,27 +368,9 @@ func yesNo(v bool) string {
 
 var daemonInstallEnvVars = []string{
 	"OPENAI_API_KEY",
-	"ANTHROPIC_API_KEY",
-	"OPENROUTER_API_KEY",
-	"GROQ_API_KEY",
-	"MISTRAL_API_KEY",
-	"DEEPSEEK_API_KEY",
-	"MOONSHOT_API_KEY",
-	"XAI_API_KEY",
-	"ZAI_API_KEY",
-	"ZHIPUAI_API_KEY",
 	"ZEN_API_KEY",
 	"OPENCODE_API_KEY",
-	"GEMINI_API_KEY",
-	"GOOGLE_API_KEY",
-	"OLLAMA_API_KEY",
-	"OLLAMA_HOST",
-	"ALIBABA_CLOUD_API_KEY",
 	"OPENUSAGE_DEBUG",
-	// Hub exporter Bearer token. Captured at install time so the daemon's
-	// exporter can authenticate to a remote hub without the operator having
-	// to hand-edit the platform service file.
-	"OPENUSAGE_HUB_TOKEN",
 }
 
 func currentServiceEnvSnapshot() map[string]string {

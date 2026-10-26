@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -242,13 +241,4 @@ func tierFromPair(in, out, cacheRead, cacheWrite *float64) *TierRates {
 		r.CacheWriteCostPerMillion = &v
 	}
 	return r
-}
-
-// stripLiteLLMProviderPrefix removes the optional "<provider>/" prefix
-// LiteLLM uses on some keys (e.g. "openai/gpt-4o").
-func stripLiteLLMProviderPrefix(id string) string {
-	if idx := strings.Index(id, "/"); idx >= 0 && idx < len(id)-1 {
-		return id[idx+1:]
-	}
-	return id
 }

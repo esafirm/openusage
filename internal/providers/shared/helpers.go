@@ -136,40 +136,6 @@ func FetchJSON(ctx context.Context, url, apiKey string, out any, client *http.Cl
 	return resp.StatusCode, resp.Header, nil
 }
 
-// ProbeRateLimits performs a GET request to the given URL with Bearer auth,
-// copies redacted headers to snap.Raw, applies standard status code handling
-// (401/403 → StatusAuth, 429 → StatusLimited), and parses standard RPM/TPM
-// rate-limit headers. If client is nil a default client with a 30-second
-// timeout is used.
-func ProbeRateLimits(ctx context.Context, url, apiKey string, snap *core.UsageSnapshot, client *http.Client) error {
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	for k, v := range parsers.RedactHeaders(resp.Header) {
-		snap.Raw[k] = v
-	}
-
-	ApplyStatusFromResponse(resp, snap)
-	if snap.Status == core.StatusAuth {
-		return nil
-	}
-
-	ApplyStandardRateLimits(resp, snap)
-	return nil
-}
-
 // AnyPathModifiedAfter returns true if any of the given paths has an mtime
 // after since. Paths that don't exist or can't be stat'd are silently skipped.
 func AnyPathModifiedAfter(paths []string, since time.Time) bool {

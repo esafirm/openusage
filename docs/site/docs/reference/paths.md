@@ -5,7 +5,7 @@ description: Every file and directory OpenUsage reads or writes, by operating sy
 
 # Paths reference
 
-OpenUsage follows the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/) on Linux and macOS. Windows uses `%APPDATA%`. Every path below can be overridden — see the **Override** column.
+OpenUsage follows the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/) on Linux and macOS. Every path below can be overridden. See the **Override** column.
 
 ## OpenUsage paths
 
@@ -39,14 +39,9 @@ These belong to the third-party tools OpenUsage hooks into.
 | Path | Tool | Purpose | Override |
 |---|---|---|---|
 | `~/.claude/settings.json` | Claude Code | Hook registration. | `CLAUDE_SETTINGS_FILE` |
-| `~/.codex/config.toml` | Codex | `notify` registration. | `CODEX_CONFIG_DIR` |
 | `~/.config/opencode/opencode.json` or `opencode.jsonc` | OpenCode | Read only. Plugin registration is not required — OpenCode auto-discovers the plugin directory. Legacy entries written by openusage < 0.24.5 are still honored and removed on uninstall. | — |
 | `~/.config/opencode/plugins/openusage-telemetry.ts` | OpenCode | Plugin source installed by `integrations install opencode`. | — |
 | `~/.local/share/opencode/auth.json` | OpenCode | API keys adopted by auto-detection (OpenCode's data dir). | `XDG_DATA_HOME` |
-
-:::note OpenCode `auth.json` on Windows
-OpenCode resolves its data directory through the `xdg-basedir` library, which has no Windows-specific branch, so on Windows it writes credentials to `%USERPROFILE%\.local\share\opencode\auth.json` rather than under `%APPDATA%`. Auto-detection probes that XDG-style location first on Windows, then `%LOCALAPPDATA%\opencode\auth.json` and `%APPDATA%\opencode\auth.json` as forward-compatible fallbacks.
-:::
 
 ## Per-OS expansion
 
@@ -67,38 +62,13 @@ OpenCode resolves its data directory through the `xdg-basedir` library, which ha
 | Service file | `~/.config/systemd/user/openusage-telemetry.service` |
 | Logs | Files plus `journalctl --user-unit openusage-telemetry.service` |
 
-### Windows
-
-| Logical path | Resolved |
-|---|---|
-| Config dir | `%APPDATA%\openusage\` |
-| `custom-pricing.json` | `%APPDATA%\openusage\custom-pricing.json` (or `$XDG_CONFIG_HOME\openusage\` if set) |
-| Hooks dir | `%APPDATA%\openusage\hooks\` |
-| State dir | `%APPDATA%\openusage\state\` (or `$XDG_STATE_HOME\openusage\` if set) |
-| Theme dir separator | `;` (semicolon) for `OPENUSAGE_THEME_DIR` |
-
-OpenUsage's own directories live under `%APPDATA%\openusage`. Third-party tool
-directories that OpenUsage reads are resolved the way each tool resolves them,
-which is **not** always the Windows-native location: tools that use the
-`xdg-basedir`/`env-paths` libraries (e.g. OpenCode) read from
-`%USERPROFILE%\.config\<tool>` and `%USERPROFILE%\.local\share\<tool>` on Windows
-too. See the per-tool notes above.
-
-:::note Daemon on Windows
-The launchd / systemd-user service installer is not supported on Windows, and
-the TUI cannot auto-spawn or auto-upgrade a daemon there. Telemetry mode works
-if you start the daemon yourself with `openusage telemetry daemon run` (the TUI
-connects to it over the local socket); a managed Windows-service lifecycle is
-tracked as future work.
-:::
-
 ## Theme search order
 
 Themes are loaded in this order; later files with the same `name` override earlier ones:
 
 1. Built-in themes compiled into the binary.
-2. `<config_dir>/themes/*.json` — i.e. `~/.config/openusage/themes/` on Linux/macOS, `%APPDATA%\openusage\themes\` on Windows.
-3. Each path in `OPENUSAGE_THEME_DIR`, separated by `:` on Unix and `;` on Windows.
+2. `<config_dir>/themes/*.json` - that is, `~/.config/openusage/themes/` on Linux and macOS.
+3. Each path in `OPENUSAGE_THEME_DIR`, separated by `:`.
 
 See [External themes](../customization/external-themes.md).
 

@@ -28,7 +28,7 @@ func TestManagerInstallAndListStatuses(t *testing.T) {
 	}
 	m := Manager{dirs: dirs}
 
-	for _, id := range []ID{OpenCodeID, CodexID, ClaudeCodeID, AntigravityID} {
+	for _, id := range []ID{OpenCodeID, ClaudeCodeID, AntigravityID} {
 		if err := m.Install(id); err != nil {
 			t.Fatalf("Install(%s) error = %v", id, err)
 		}
@@ -80,54 +80,5 @@ func TestManagerListStatusesMissing(t *testing.T) {
 		if st.State != "missing" {
 			t.Errorf("status for %s: State = %q, want missing", st.ID, st.State)
 		}
-	}
-}
-
-func TestManagerDetectOutdated(t *testing.T) {
-	root := t.TempDir()
-	dirs := Dirs{
-		Home:         root,
-		ConfigRoot:   filepath.Join(root, ".config"),
-		HooksDir:     filepath.Join(root, ".config", "openusage", "hooks"),
-		OpenusageBin: "/tmp/openusage-bin",
-	}
-
-	// Create an old-version hook file for codex.
-	def, _ := DefinitionByID(CodexID)
-	if def.WritesArtifact != nil && !def.WritesArtifact(dirs) {
-		// On platforms where Codex registers the openusage binary directly
-		// (no hook script), there is no on-disk version to mark "outdated".
-		t.Skip("codex writes no artifact file on this platform; outdated detection is file-based")
-	}
-	hookFile := def.TargetFileFunc(dirs)
-	configFile := def.ConfigFileFunc(dirs)
-	if err := os.MkdirAll(filepath.Dir(hookFile), 0o755); err != nil {
-		t.Fatalf("mkdir hook dir: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(configFile), 0o755); err != nil {
-		t.Fatalf("mkdir config dir: %v", err)
-	}
-	if err := os.WriteFile(hookFile, []byte("# openusage-integration-version: 2025-01-01\n"), 0o755); err != nil {
-		t.Fatalf("write hook: %v", err)
-	}
-	if err := os.WriteFile(configFile, []byte("notify = [\""+hookFile+"\"]\n"), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	m := Manager{dirs: dirs}
-	statuses := m.ListStatuses()
-
-	var codexStatus Status
-	for _, st := range statuses {
-		if st.ID == CodexID {
-			codexStatus = st
-			break
-		}
-	}
-	if !codexStatus.NeedsUpgrade {
-		t.Fatalf("codex status.NeedsUpgrade = false, want true")
-	}
-	if codexStatus.State != "outdated" {
-		t.Fatalf("codex status.State = %q, want outdated", codexStatus.State)
 	}
 }

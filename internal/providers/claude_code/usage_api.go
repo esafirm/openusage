@@ -18,9 +18,10 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3" // already in go.mod for cursor provider
+	_ "github.com/mattn/go-sqlite3" // already in go.mod for opencode telemetry
 
 	"golang.org/x/crypto/pbkdf2"
+	"golang.org/x/term"
 )
 
 type usageResponse struct {
@@ -43,18 +44,21 @@ func getClaudeSessionCookies() (map[string]string, error) {
 		return nil, fmt.Errorf("cookie extraction only supported on macOS")
 	}
 
-	encKey, err := getChromiumEncryptionKey()
-	if err != nil {
-		return nil, fmt.Errorf("getting encryption key: %w", err)
-	}
-
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("resolving home directory: %w", err)
 	}
 	cookiesPath := filepath.Join(home, "Library", "Application Support", "Claude", "Cookies")
 	if _, err := os.Stat(cookiesPath); os.IsNotExist(err) {
+		// Check the file before touching the keychain. The "Claude Safe
+		// Storage" item can exist without the desktop app ever writing its
+		// cookie DB, and a keychain read prompts or blocks.
 		return nil, fmt.Errorf("Claude desktop Cookies DB not found: %s", cookiesPath)
+	}
+
+	encKey, err := getChromiumEncryptionKey()
+	if err != nil {
+		return nil, fmt.Errorf("getting encryption key: %w", err)
 	}
 
 	tmpFile, err := os.CreateTemp("", "claude-cookies-*.db")
@@ -128,11 +132,28 @@ func getClaudeSessionCookies() (map[string]string, error) {
 // Try each in order so we work across versions.
 var claudeSafeStorageAccounts = []string{"Claude Key", "Claude"}
 
+// claudeDesktopCookieAuthAllowed reports whether the macOS desktop-cookie
+// source may run. The source can read the login keychain, which prompts or
+// blocks in a background process, so it is limited to interactive setup
+// commands. Set OPENUSAGE_CLAUDE_DESKTOP_COOKIES=1 to force it on, or =0 to
+// force it off.
+func claudeDesktopCookieAuthAllowed() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("OPENUSAGE_CLAUDE_DESKTOP_COOKIES"))) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	}
+	return term.IsTerminal(int(os.Stdin.Fd()))
+}
+
 func getChromiumEncryptionKey() ([]byte, error) {
 	var lastErr error
 	for _, account := range claudeSafeStorageAccounts {
-		cmd := exec.Command("security", "find-generic-password", "-w", "-s", "Claude Safe Storage", "-a", account)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		cmd := exec.CommandContext(ctx, "security", "find-generic-password", "-w", "-s", "Claude Safe Storage", "-a", account)
 		out, err := cmd.Output()
+		cancel()
 		if err != nil {
 			if !keychainItemNotFound(err) {
 				return nil, fmt.Errorf("keychain lookup for account %q failed: %w", account, err)

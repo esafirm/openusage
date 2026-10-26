@@ -125,8 +125,6 @@ func TestAPIKeyEnvLabelForProvider_IncludesAliases(t *testing.T) {
 		want       string
 	}{
 		{providerID: "opencode", want: "OPENCODE_API_KEY / ZEN_API_KEY"},
-		{providerID: "gemini_api", want: "GEMINI_API_KEY / GOOGLE_API_KEY"},
-		{providerID: "zai", want: "ZAI_API_KEY / ZHIPUAI_API_KEY"},
 	}
 
 	for _, tt := range tests {
@@ -141,18 +139,12 @@ func TestAPIKeyEnvLabelForProvider_IncludesAliases(t *testing.T) {
 func TestResolvedAPIKeyEnvForProvider_PrefersConfiguredAlias(t *testing.T) {
 	t.Setenv("OPENCODE_API_KEY", "")
 	t.Setenv("ZEN_API_KEY", "zen-test-key")
-	t.Setenv("GEMINI_API_KEY", "")
-	t.Setenv("GOOGLE_API_KEY", "google-test-key")
-	t.Setenv("ZAI_API_KEY", "")
-	t.Setenv("ZHIPUAI_API_KEY", "zhipu-test-key")
 
 	tests := []struct {
 		providerID string
 		want       string
 	}{
 		{providerID: "opencode", want: "ZEN_API_KEY"},
-		{providerID: "gemini_api", want: "GOOGLE_API_KEY"},
-		{providerID: "zai", want: "ZHIPUAI_API_KEY"},
 	}
 
 	for _, tt := range tests {

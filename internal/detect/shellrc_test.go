@@ -97,24 +97,24 @@ func TestDetectShellRC_FindsKeyInZshrcD(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(dropin), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(dropin, []byte(`export ANTHROPIC_API_KEY="sk-ant-from-dropin-12345"`+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(dropin, []byte(`export ZEN_API_KEY="zen-from-dropin-12345"`+"\n"), 0o600); err != nil {
 		t.Fatalf("write dropin: %v", err)
 	}
 
 	setHome(t, home)
-	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("ZEN_API_KEY", "")
 
 	var result Result
 	detectShellRC(&result)
 
 	var found bool
 	for _, a := range result.Accounts {
-		if a.Provider == "anthropic" && a.Token == "sk-ant-from-dropin-12345" {
+		if a.Provider == "opencode" && a.Token == "zen-from-dropin-12345" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("expected anthropic account from .zshrc.d/, got %+v", result.Accounts)
+		t.Fatalf("expected opencode account from .zshrc.d/, got %+v", result.Accounts)
 	}
 }
 
@@ -124,24 +124,24 @@ func TestDetectShellRC_FindsFishKey(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(fish), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(fish, []byte(`set -gx GROQ_API_KEY gsk-fish-1234567890`+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(fish, []byte(`set -gx OPENCODE_API_KEY oc-fish-1234567890`+"\n"), 0o600); err != nil {
 		t.Fatalf("write fish: %v", err)
 	}
 
 	setHome(t, home)
-	t.Setenv("GROQ_API_KEY", "")
+	t.Setenv("OPENCODE_API_KEY", "")
 
 	var result Result
 	detectShellRC(&result)
 
 	var found bool
 	for _, a := range result.Accounts {
-		if a.Provider == "groq" && a.Token == "gsk-fish-1234567890" {
+		if a.Provider == "opencode" && a.Token == "oc-fish-1234567890" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("expected groq account from fish config, got %+v", result.Accounts)
+		t.Fatalf("expected opencode account from fish config, got %+v", result.Accounts)
 	}
 }
 

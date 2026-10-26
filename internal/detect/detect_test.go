@@ -111,24 +111,6 @@ func TestDetectEnvKeys_FindsSetKey(t *testing.T) {
 	}
 }
 
-func TestDetectEnvKeys_FindsMoonshotKey(t *testing.T) {
-	t.Setenv("MOONSHOT_API_KEY", "sk-moonshot-1234567890abcdef")
-
-	var result Result
-	detectEnvKeys(&result)
-
-	found := false
-	for _, acct := range result.Accounts {
-		if acct.Provider == "moonshot" && acct.APIKeyEnv == "MOONSHOT_API_KEY" && acct.ID == "moonshot-ai" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("Expected MOONSHOT_API_KEY to be detected as moonshot-ai")
-	}
-}
-
 func TestDetectEnvKeys_FindsZenKeys(t *testing.T) {
 	t.Setenv("ZEN_API_KEY", "zen-test-key-123456")
 
@@ -162,125 +144,6 @@ func TestDetectEnvKeys_FindsOpenCodeKey(t *testing.T) {
 	}
 	if !found {
 		t.Error("Expected OPENCODE_API_KEY to be detected")
-	}
-}
-
-func TestDetectEnvKeys_FindsAzureKey(t *testing.T) {
-	t.Setenv("AZURE_API_KEY", "azure-test-key-123456")
-
-	var result Result
-	detectEnvKeys(&result)
-
-	found := false
-	for _, acct := range result.Accounts {
-		if acct.Provider == "azure_openai" && acct.APIKeyEnv == "AZURE_API_KEY" && acct.ID == "azure_openai" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("Expected AZURE_API_KEY to be detected as azure_openai")
-	}
-}
-
-func TestDetectEnvKeys_AzureOpenAIKeyWinsOverAzureKey(t *testing.T) {
-	t.Setenv("AZURE_OPENAI_API_KEY", "azure-openai-test-key")
-	t.Setenv("AZURE_API_KEY", "azure-test-key")
-
-	var result Result
-	detectEnvKeys(&result)
-
-	count := 0
-	var apiKeyEnv string
-	for _, acct := range result.Accounts {
-		if acct.ID == "azure_openai" {
-			count++
-			apiKeyEnv = acct.APIKeyEnv
-		}
-	}
-	if count != 1 {
-		t.Fatalf("azure_openai account count = %d, want 1 (deduped by ID)", count)
-	}
-	if apiKeyEnv != "AZURE_OPENAI_API_KEY" {
-		t.Errorf("APIKeyEnv = %q, want AZURE_OPENAI_API_KEY to win (listed first)", apiKeyEnv)
-	}
-}
-
-func TestDetectEnvKeys_FindsZAIKeys(t *testing.T) {
-	t.Setenv("ZAI_API_KEY", "zai-test-key-123456")
-	t.Setenv("ZHIPUAI_API_KEY", "zhipuai-test-key-123456")
-
-	var result Result
-	detectEnvKeys(&result)
-
-	foundZAI := false
-	foundZhipu := false
-	for _, acct := range result.Accounts {
-		if acct.Provider != "zai" {
-			continue
-		}
-		if acct.ID == "zai" && acct.APIKeyEnv == "ZAI_API_KEY" {
-			foundZAI = true
-		}
-		if acct.ID == "zhipuai-auto" && acct.APIKeyEnv == "ZHIPUAI_API_KEY" {
-			foundZhipu = true
-		}
-	}
-	if !foundZAI {
-		t.Fatal("expected ZAI_API_KEY mapping to zai")
-	}
-	if !foundZhipu {
-		t.Fatal("expected ZHIPUAI_API_KEY mapping to zhipuai-auto")
-	}
-}
-
-func TestProviderForStoredCredential_ZAI(t *testing.T) {
-	if got := providerForStoredCredential("zai"); got != "zai" {
-		t.Fatalf("providerForStoredCredential(zai) = %q, want zai", got)
-	}
-}
-
-func TestDetectZAICodingHelper_Config(t *testing.T) {
-	home := t.TempDir()
-	configDir := filepath.Join(home, ".chelper")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", configDir, err)
-	}
-	configFile := filepath.Join(configDir, "config.yaml")
-	content := `lang: en_US
-plan: glm_coding_plan_china
-api_key: test-zai-token
-`
-	if err := os.WriteFile(configFile, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	setHome(t, home)
-	t.Setenv("PATH", "")
-	t.Setenv("OPENUSAGE_DETECT_BIN_DIRS", "")
-
-	var result Result
-	detectZAICodingHelper(&result)
-
-	if len(result.Accounts) != 1 {
-		t.Fatalf("expected 1 account, got %d", len(result.Accounts))
-	}
-
-	acct := result.Accounts[0]
-	if acct.ID != "zai-coding-plan-auto" {
-		t.Fatalf("account ID = %q, want zai-coding-plan-auto", acct.ID)
-	}
-	if acct.Provider != "zai" {
-		t.Fatalf("provider = %q, want zai", acct.Provider)
-	}
-	if acct.Token != "test-zai-token" {
-		t.Fatalf("token = %q, want test-zai-token", acct.Token)
-	}
-	if acct.RuntimeHints == nil || acct.RuntimeHints["plan_type"] != "glm_coding_plan_china" {
-		t.Fatalf("plan_type = %q, want glm_coding_plan_china", acct.RuntimeHints["plan_type"])
-	}
-	if acct.RuntimeHints["source"] != "chelper" {
-		t.Fatalf("source = %q, want chelper", acct.RuntimeHints["source"])
 	}
 }
 
@@ -498,7 +361,7 @@ func TestDetectGHCopilot_StandaloneBinaryNoGH(t *testing.T) {
 	}
 }
 
-func TestDetectGHCopilot_GHCopilotTakesPrecedence(t *testing.T) {
+func TestDetectGHCopilot_StandaloneTakesPrecedence(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test uses shell scripts")
 	}
@@ -507,10 +370,10 @@ func TestDetectGHCopilot_GHCopilotTakesPrecedence(t *testing.T) {
 	home := t.TempDir()
 
 	// Create a fake gh binary that succeeds for "copilot --version".
-	ghBin := writeExe(t, tmp, "gh", `exit 0`)
+	writeExe(t, tmp, "gh", `exit 0`)
 
 	// Also create a standalone copilot binary.
-	writeExe(t, tmp, "copilot", "exit 0")
+	copilotBin := writeExe(t, tmp, "copilot", "exit 0")
 
 	// Create ~/.copilot/ directory.
 	copilotDir := filepath.Join(home, ".copilot")
@@ -528,9 +391,9 @@ func TestDetectGHCopilot_GHCopilotTakesPrecedence(t *testing.T) {
 	if len(result.Tools) != 1 {
 		t.Fatalf("expected 1 tool, got %d", len(result.Tools))
 	}
-	// gh copilot path should be used, not standalone.
-	if result.Tools[0].Name != "GitHub Copilot (gh CLI)" {
-		t.Errorf("tool name = %q, want %q", result.Tools[0].Name, "GitHub Copilot (gh CLI)")
+	// Standalone copilot wins because it avoids running gh.
+	if result.Tools[0].Name != "GitHub Copilot CLI" {
+		t.Errorf("tool name = %q, want %q", result.Tools[0].Name, "GitHub Copilot CLI")
 	}
 
 	if len(result.Accounts) != 1 {
@@ -538,12 +401,11 @@ func TestDetectGHCopilot_GHCopilotTakesPrecedence(t *testing.T) {
 	}
 
 	acct := result.Accounts[0]
-	if acct.Binary != ghBin {
-		t.Errorf("account Binary = %q, want gh path %q", acct.Binary, ghBin)
+	if acct.Binary != copilotBin {
+		t.Errorf("account Binary = %q, want copilot path %q", acct.Binary, copilotBin)
 	}
-	// gh copilot path should NOT have RuntimeHints (legacy behavior).
-	if acct.RuntimeHints != nil {
-		t.Errorf("account RuntimeHints should be nil for gh copilot path, got %v", acct.RuntimeHints)
+	if acct.RuntimeHints == nil || acct.RuntimeHints["copilot_binary"] != copilotBin {
+		t.Errorf("account RuntimeHints = %v, want copilot_binary=%s", acct.RuntimeHints, copilotBin)
 	}
 }
 
@@ -556,7 +418,7 @@ func TestDetectGHCopilot_StandaloneBinaryWithGH(t *testing.T) {
 	home := t.TempDir()
 
 	// Create a gh binary that FAILS for "copilot --version" (extension not installed).
-	ghBin := writeExe(t, tmp, "gh", `exit 1`)
+	writeExe(t, tmp, "gh", `exit 1`)
 
 	// Create a standalone copilot binary.
 	copilotBin := writeExe(t, tmp, "copilot", "exit 0")
@@ -579,10 +441,10 @@ func TestDetectGHCopilot_StandaloneBinaryWithGH(t *testing.T) {
 	}
 
 	acct := result.Accounts[0]
-	// gh is available but copilot extension is not, so Binary should be gh
-	// (the provider uses gh api for quota calls).
-	if acct.Binary != ghBin {
-		t.Errorf("account Binary = %q, want gh path %q (gh available for api calls)", acct.Binary, ghBin)
+	// The standalone binary wins, even when gh is on PATH. The provider
+	// resolves gh itself when it needs API quota data.
+	if acct.Binary != copilotBin {
+		t.Errorf("account Binary = %q, want copilot path %q", acct.Binary, copilotBin)
 	}
 	if acct.RuntimeHints["copilot_binary"] != copilotBin {
 		t.Errorf("RuntimeHints[copilot_binary] = %q, want %q", acct.RuntimeHints["copilot_binary"], copilotBin)

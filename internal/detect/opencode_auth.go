@@ -23,26 +23,20 @@ type opencodeAuthEntry struct {
 // opencodeAuthMapping maps an OpenCode auth.json provider key to the matching
 // openusage provider id and the canonical account id we want the credential
 // to land on. The account id is intentionally aligned with what
-// detectEnvKeys produces — addAccount() de-dupes by id, so when the user
-// has both an env var and an OpenCode-stored key the env-var path wins
-// (it runs first in AutoDetect).
+// detectEnvKeys produces. addAccount() de-dupes by id, so when the user has
+// both an env var and an OpenCode-stored key the env-var path wins (it runs
+// first in AutoDetect).
 //
 // Both "opencode" (the Zen catalog) and "opencode-go" (the lower-cost Go
 // subscription) land on the same openusage account id because they share the
-// OPENCODE_API_KEY env var upstream and there's no operational benefit to
-// representing them as two separate tiles — they hit the same Zen models
-// endpoint with the same key (see github.com/anomalyco/opencode dialog-
-// provider.tsx and our provider.go).
+// OPENCODE_API_KEY env var upstream and hit the same Zen models endpoint.
+// OpenCode entries for providers this build does not ship are ignored.
 var opencodeAuthMapping = map[string]struct {
 	Provider  string
 	AccountID string
 }{
-	"moonshotai":   {"moonshot", "moonshot-ai"},
-	"openrouter":   {"openrouter", "openrouter"},
-	"zai":          {"zai", "zai"},
-	"opencode":     {"opencode", "opencode"},
-	"opencode-go":  {"opencode", "opencode"},
-	"ollama-cloud": {"ollama", "ollama-cloud"},
+	"opencode":    {"opencode", "opencode"},
+	"opencode-go": {"opencode", "opencode"},
 }
 
 // opencodeAuthPaths returns every platform-appropriate candidate path for
@@ -52,9 +46,7 @@ var opencodeAuthMapping = map[string]struct {
 // XDG_DATA_HOME, if set, wins on every platform. The remaining per-OS
 // candidates are provided by opencodeAuthPlatformPaths() in the
 // opencode_auth_paths_*.go files. OpenCode resolves its data dir through the
-// `xdg-basedir` JS package, which has no Windows special-case and therefore
-// writes to ~/.local/share/opencode/auth.json even on Windows (see
-// anomalyco/opencode#8235) — hence the XDG-style default is probed first there.
+// `xdg-basedir` JS package, so it uses the XDG-style path on macOS too.
 func opencodeAuthPaths() []string {
 	home := homeDir()
 	if home == "" {
@@ -101,9 +93,8 @@ func opencodeAuthPath() string {
 
 // detectOpenCodeAuth reads OpenCode's auth.json and registers an account for
 // every provider whose entry is an API key (type=="api"). OAuth entries are
-// skipped: openusage's anthropic/openai/google providers expect API keys for
-// their poll-time probes; using OpenCode's chat-scoped OAuth tokens against
-// /v1/usage / rate-limit endpoints would mostly 401.
+// skipped because OpenUsage's OpenAI provider expects an API key for its
+// poll-time probe.
 func detectOpenCodeAuth(result *Result) {
 	path := opencodeAuthPath()
 	if path == "" {

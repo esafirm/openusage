@@ -15,24 +15,19 @@ import (
 // detectCredentialFiles probes a small set of well-known credential files
 // that AI CLIs and adjacent tools write outside our existing tool detectors:
 //
-//   - Claude Code CLI on Linux/Windows: ~/.claude/.credentials.json (JSON
-//     with accessToken/refreshToken) — the file equivalent of the macOS
-//     "Claude Code-credentials" keychain entry, used on platforms without a
-//     local keychain daemon. Confirmed via Anthropic's authentication docs.
-//   - GitHub CLI: ~/.config/gh/hosts.yml (Linux/macOS) or
-//     %APPDATA%/GitHub CLI/hosts.yml (Windows). Plaintext fallback when the
-//     system keychain is unavailable; contains a usable OAuth token.
-//   - Google Cloud ADC: ~/.config/gcloud/application_default_credentials.json
-//     (or %APPDATA%/gcloud/...) — refresh token usable for Gemini / Vertex.
+//   - Claude Code CLI on Linux: ~/.claude/.credentials.json (JSON with
+//     accessToken/refreshToken), the file equivalent of the macOS
+//     "Claude Code-credentials" keychain entry.
+//   - GitHub CLI: ~/.config/gh/hosts.yml. Plaintext fallback when the system
+//     keychain is unavailable, contains a usable OAuth token.
 //
-// We never extract OAuth refresh values into Token here — those need a
+// We never extract OAuth refresh values into Token here. Those need a
 // provider-specific refresh exchange before they're usable. We surface
 // presence with a credential_source hint so the user can see "yes, OpenUsage
 // found your credential" via `openusage detect`.
 func detectCredentialFiles(result *Result) {
 	probeClaudeCodeCredentialsFile(result)
 	probeGHHostsFile(result)
-	probeGcloudADCFile(result)
 }
 
 // probeClaudeCodeCredentialsFile annotates / creates a claude-code account
@@ -108,79 +103,9 @@ func probeGHHostsFile(result *Result) {
 	log.Printf("[detect] gh hosts.yml github.com oauth_token present (%s)", MaskKey(github.OAuthToken))
 }
 
-// probeGcloudADCFile surfaces presence of Application Default Credentials
-// (refresh token usable for Gemini / Vertex). We don't currently auto-create
-// a Vertex provider account — the file's mere presence is informational.
-// When the gemini_api or gemini_cli account is already registered we
-// annotate it with "you also have ADC" so users can see the relationship in
-// `openusage detect`.
-func probeGcloudADCFile(result *Result) {
-	home := homeDir()
-	if home == "" {
-		return
-	}
-	path := gcloudADCPath(home)
-	if path == "" || !fileExists(path) {
-		return
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		log.Printf("[detect] gcloud ADC read error: %v", err)
-		return
-	}
-	var creds struct {
-		Type         string `json:"type"`
-		RefreshToken string `json:"refresh_token"`
-	}
-	if err := json.Unmarshal(data, &creds); err != nil {
-		log.Printf("[detect] gcloud ADC parse error: %v", err)
-		return
-	}
-	if creds.Type != "authorized_user" || creds.RefreshToken == "" {
-		// Service-account JSON or partial file; skip.
-		return
-	}
-
-	hint := "file:" + path
-	annotated := false
-	for i := range result.Accounts {
-		if result.Accounts[i].Provider == "gemini_api" || result.Accounts[i].Provider == "gemini_cli" {
-			result.Accounts[i].SetHint("gcloud_adc", hint)
-			annotated = true
-		}
-	}
-	if annotated {
-		log.Printf("[detect] gcloud ADC present at %s (annotated existing gemini account)", path)
-	} else {
-		log.Printf("[detect] gcloud ADC present at %s (no gemini account to annotate)", path)
-	}
-}
-
-// ghHostsPath returns the platform-specific path to gh CLI's hosts.yml.
+// ghHostsPath returns the path to gh CLI's hosts.yml on macOS and Linux.
 func ghHostsPath(home string) string {
-	switch runtime.GOOS {
-	case "windows":
-		if v := os.Getenv("APPDATA"); v != "" {
-			return filepath.Join(v, "GitHub CLI", "hosts.yml")
-		}
-		return filepath.Join(home, "AppData", "Roaming", "GitHub CLI", "hosts.yml")
-	default:
-		return filepath.Join(home, ".config", "gh", "hosts.yml")
-	}
-}
-
-// gcloudADCPath returns the platform-specific path to the gcloud ADC file.
-func gcloudADCPath(home string) string {
-	switch runtime.GOOS {
-	case "windows":
-		if v := os.Getenv("APPDATA"); v != "" {
-			return filepath.Join(v, "gcloud", "application_default_credentials.json")
-		}
-		return filepath.Join(home, "AppData", "Roaming", "gcloud", "application_default_credentials.json")
-	default:
-		return filepath.Join(home, ".config", "gcloud", "application_default_credentials.json")
-	}
+	return filepath.Join(home, ".config", "gh", "hosts.yml")
 }
 
 // annotateOrCreateAccount sets credential_source on an existing account with

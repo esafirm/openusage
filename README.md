@@ -2,7 +2,7 @@
   <img src="./assets/logo.gif" alt="OpenUsage logo">
 </p>
 
-<p align="center"><strong>OpenUsage.sh: terminal-first local quota and usage tracking for Claude Code, Codex CLI, Cursor, Copilot, and OpenRouter.</strong></p>
+<p align="center"><strong>OpenUsage: terminal-first local quota and usage tracking for Claude Code, OpenCode, Antigravity, OpenAI, and GitHub Copilot.</strong></p>
 
 <p align="center">
   <a href="#install">Install</a> &middot;
@@ -14,7 +14,10 @@
 
 ---
 
-OpenUsage is the terminal-first local dashboard published at [openusage.sh](https://openusage.sh/). Publicly, the clearest brand reference is **OpenUsage.sh**. It auto-detects AI coding tools and API keys on your workstation and shows live quota, usage, spend, resets, rate limits, and model data in your terminal. It is built for mixed-tool workflows across Claude Code, Codex CLI, Cursor, Copilot, Gemini CLI, OpenRouter, OpenAI, Anthropic, and more. Zero config required — just run `openusage`.
+OpenUsage is a terminal dashboard for local AI coding tool usage. It reads local
+stats, conversation logs, API rate-limit headers, and optional hook events, then
+shows quota, spend, resets, and per-model usage in one view. It is built for
+macOS and Linux.
 
 ![OpenUsage dashboard](./assets/dashboard.png)
 
@@ -23,7 +26,7 @@ Run it side-by-side with your coding agent:
 <p align="center">
   <img src="./assets/sidebyside.png" alt="OpenUsage side by side">
   <br>
-  <em>OpenUsage running alongside OpenCode monitoring live OpenRouter usage.</em>
+  <em>OpenUsage running alongside OpenCode.</em>
 </p>
 
 ## Install
@@ -34,7 +37,7 @@ Run it side-by-side with your coding agent:
 brew install janekbaraniewski/tap/openusage
 ```
 
-### All platforms (quick install script)
+### macOS and Linux (quick install script)
 
 ```bash
 curl -fsSL https://github.com/janekbaraniewski/openusage/releases/latest/download/install.sh | bash
@@ -46,7 +49,9 @@ curl -fsSL https://github.com/janekbaraniewski/openusage/releases/latest/downloa
 go install github.com/janekbaraniewski/openusage/cmd/openusage@latest
 ```
 
-Requires CGO (`CGO_ENABLED=1`). Pre-built binaries are also available on the [Releases](https://github.com/janekbaraniewski/openusage/releases) page.
+Requires CGO (`CGO_ENABLED=1`) for the SQLite telemetry store. Pre-built
+binaries are available on the [Releases](https://github.com/janekbaraniewski/openusage/releases)
+page.
 
 ## Run
 
@@ -54,184 +59,42 @@ Requires CGO (`CGO_ENABLED=1`). Pre-built binaries are also available on the [Re
 openusage
 ```
 
-Auto-detection picks up local tools and common API key env vars. No config needed.
-
-## Command-line reports & statusline
-
-Besides the live dashboard, OpenUsage has headless subcommands that reuse the same parsing and pricing — handy for scripts, CI, and quick checks:
-
-```bash
-openusage daily                # usage & cost by day (also: weekly, monthly)
-openusage session              # grouped by session
-openusage blocks               # by 5-hour billing block, with burn rate + projection
-openusage daily --json         # machine-readable output for scripts/CI
-openusage statusline install   # one-line status bar for Claude Code
-```
-
-What each report can show, by provider:
-
-| Report | Providers |
-|---|---|
-| `daily` / `weekly` / `monthly` | every provider that reports cost or tokens |
-| `session` / `blocks` | Claude Code, Codex, Gemini CLI, Copilot, Cursor, OpenCode, Ollama, Amp, Codebuff, OpenClaw, Roo Code, Kilo Code, Crush, Goose, Hermes, Zed, Droid, Kiro |
-| `statusline` | Claude Code |
-
-Remote API platforms (OpenAI, Anthropic, OpenRouter, …) appear in the periodic reports only — they expose no per-turn data. See the [headless reports & statusline guide](docs/site/docs/guides/cli-reports.md) for the full matrix and flags.
-
-### Add to tmux
-
-<table>
-<tr>
-<td width="55%" valign="middle">
-
-Show your Claude Code, Codex, Cursor, Copilot, and OpenRouter usage — cost, quota, burn rate, and the active tool — right in your **tmux status bar**. It tracks whichever tool you're actively using and renders its real, brand-colored logo.
-
-</td>
-<td width="45%" valign="middle">
-
-![OpenUsage in the tmux status bar](./assets/tmux-ccode.png)
-
-</td>
-</tr>
-</table>
-
-One command to set it up. Tweak the layout and segments live, then reload:
-
-```bash
-openusage tmux install                         # interactive setup
-tmux source-file ~/.config/tmux/tmux.conf      # reload
-```
-
-<p align="center">
-  <img src="./assets/install-tmux.gif" alt="Installing the OpenUsage tmux status segment" width="720">
-</p>
-
-Want real provider logos instead of emoji? The installer can drop in a bundled icon font and wire up your terminal. See [provider icons](docs/site/docs/guides/tmux-integration.md#provider-icons-custom-font).
-
-```bash
-openusage tmux install --write                 # non-interactive (scripting): just write the snippet
-openusage tmux --preset claude-focused         # preview other presets (12 built-in)
-openusage tmux font setup                       # configure icons for kitty/Ghostty/WezTerm
-openusage tmux doctor                          # diagnose if something is off
-```
-
-See the [tmux integration guide](docs/site/docs/guides/tmux-integration.md) for the format grammar, theming, the icon font, and watch-mode alerts.
-
-### Claude Code statusline
-
-Your cost, burn rate, how much of the 5-hour limit you've used, and how full the context window is. Right in the **Claude Code status bar**:
-
-![OpenUsage statusline in Claude Code](./assets/claudecodestatus.png)
-
-Same deal as tmux: one command, pick your segments, apply.
-
-```bash
-openusage statusline install
-```
-
-<p align="center">
-  <img src="./assets/statusline-install.gif" alt="Installing the Claude Code statusline" width="720">
-</p>
-
-Restart Claude Code and it's there.
-
-See the [statusline guide](docs/site/docs/guides/claude-code-statusline.md) for customization and manual setup.
-
-## Track coding agent usage across multiple platforms
-
-Native dashboards show one provider at a time. OpenUsage gives you one local-first view across coding agents, API platforms, and local runtimes so you can answer:
-
-- Which tool or provider is burning budget?
-- Which model caused the spike?
-- Which quota or reset is getting close?
-- Which sessions, projects, or MCP tools drove the change?
-
-It is built for end-user tool tracking, not for instrumenting a separate AI app with tracing SDKs or a billing backend.
-
-If you want the full positioning argument, read the guide: [best way to track coding agent usage and quotas across providers](https://openusage.sh/best-way-track-coding-agent-usage-quotas-across-providers/).
-
-If the question is whether this is the right fit versus a simpler local limits tracker, use:
-
-- [OpenUsage.sh vs OpenUsage.ai](https://openusage.sh/docs/openusage-sh-vs-openusage-ai/)
-- [Capability matrix](https://openusage.sh/docs/capability-matrix/)
-- [Docs hub](https://openusage.sh/docs/)
-
-## Features
-
-- **Cross-provider tracking** — compare coding agents, API platforms, and local runtimes in one local dashboard
-- **37 providers** — coding agents and CLIs (Claude Code, Codex, Cursor, Copilot, Gemini CLI, Antigravity CLI, OpenCode, Amp, Goose, Roo Code, Kilo Code, Kiro, Zed, and more), API platforms (OpenAI, Anthropic, OpenRouter, Groq, Mistral, DeepSeek, Moonshot, Perplexity, xAI, Z.AI, and more), and local runtimes (Ollama)
-- **Zero config** — auto-detects your AI tools and API keys, just run it
-- **Live dashboard** — see spend, quotas, rate limits, tokens, burn rate, and per-model usage at a glance
-- **tmux integration** — show the active tool's usage in your tmux status bar, with provider icons, presets, and active-tool detection
-- **Claude Code statusline** — one-line session cost, today's cost, burn rate, and context usage in Claude Code
-- **Headless reports** — `daily`, `weekly`, `monthly`, `session`, and `blocks` reports in table or JSON
-- **Background tracking** — a daemon collects data continuously, even when the dashboard is closed, into a local SQLite database you own
-- **Deep cost insights** — model, tool, project, MCP, and session breakdowns; combine providers like OpenCode + OpenRouter
-- **Tool integrations** — optional hooks/status-line bridges for Claude Code, Codex CLI, OpenCode, and Antigravity provide richer, real-time usage data
-- **Export & metrics** — export snapshots to JSON or CSV, look up model pricing, or serve Prometheus metrics from the built-in hub
-- **Customizable** — 17 built-in themes, adjustable time windows, configurable thresholds, provider reordering, plus external theme files
+Auto-detection picks up local tools and common API key env vars. No config is
+needed.
 
 ## Supported providers
 
-37 provider integrations covering coding agents, CLIs, IDE tools, API platforms, and local runtimes. See [docs/providers.md](docs/providers.md) for all providers with detailed descriptions and screenshots.
-
-### Claude Code
-
-**Detection:** `claude` binary + `~/.claude` directory
-
-Tracks daily activity, per-model token usage, 5-hour billing block computation, burn rate, and cost estimation.
-
-![Claude Code provider](./assets/claudecode.png)
-
-### OpenRouter
-
-**Detection:** `OPENROUTER_API_KEY` environment variable
-
-Tracks credits, activity, generation stats, and per-model breakdown across multiple API endpoints.
-
-![OpenRouter provider](./assets/openrouter.png)
-
-### All providers
-
-#### Coding agents & IDEs
+This build ships five providers:
 
 | Provider | Detection | What it tracks |
 |---|---|---|
-| **Claude Code** | `claude` binary + `~/.claude` | Daily activity, per-model tokens, billing blocks, burn rate |
-| **Cursor** | `cursor` binary + local SQLite DBs | Plan spend & limits, per-model aggregation, Composer sessions |
-| **GitHub Copilot** | `gh` CLI + Copilot extension | Chat & completions quota, org billing, session tracking |
-| **Codex CLI** | `codex` binary + `~/.codex` | Session tokens, per-model breakdown, credits, rate limits |
-| **Muse Code** | `muse` binary + `~/.config/muse` + session logs | Session tokens, per-model breakdown, estimated cost |
-| **Gemini CLI** | `gemini` binary + `~/.gemini` | OAuth status, conversation count, per-model tokens |
-| **Antigravity CLI** | `agy` binary + `~/.gemini/antigravity-cli` | Status-line context, session tokens, model quotas |
-| **OpenCode** | `OPENCODE_API_KEY` / `ZEN_API_KEY` | Credits, activity, generation stats |
-| **Ollama** | `OLLAMA_HOST` / binary | Local models, per-model usage |
+| **Claude Code** | `claude` binary + `~/.claude` | Daily activity, per-model tokens, 5-hour blocks, burn rate, cost estimates |
+| **OpenCode** | `OPENCODE_API_KEY` / `ZEN_API_KEY` or `~/.local/share/opencode/auth.json` | OpenCode Go quota, Zen models, console balance, token usage from the local SQLite store |
+| **Antigravity CLI** | `agy` binary + `~/.gemini/antigravity-cli` | Status-line context, session tokens, quota windows |
+| **OpenAI** | `OPENAI_API_KEY` | RPM/TPM rate limits from the API |
+| **GitHub Copilot** | `copilot` binary + `~/.copilot` or the `gh copilot` extension | Copilot quota, org data, and session usage |
 
-#### API platforms
+### OpenCode Go quota
 
-| Provider | Detection | What it tracks |
-|---|---|---|
-| **OpenAI** | `OPENAI_API_KEY` | Rate limits via header probing |
-| **Anthropic** | `ANTHROPIC_API_KEY` | Rate limits via header probing |
-| **Azure OpenAI** | `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT` | Rate limits via header probing on the resource endpoint |
-| **OpenRouter** | `OPENROUTER_API_KEY` | Credits, activity, per-model breakdown |
-| **Groq** | `GROQ_API_KEY` | Rate limits, daily usage windows |
-| **Mistral AI** | `MISTRAL_API_KEY` | Subscription, usage endpoints |
-| **DeepSeek** | `DEEPSEEK_API_KEY` | Rate limits, account balance |
-| **Moonshot (Kimi)** | `MOONSHOT_API_KEY` | Balance breakdown (cash + voucher), org limits, tier; supports api.moonshot.ai (default) and api.moonshot.cn |
-| **Perplexity** | Browser session at console.perplexity.ai | Tier, balance, lifetime spend, auto-reload, 30d usage analytics |
-| **OpenCode (Zen + Console)** | `OPENCODE_API_KEY` / `ZEN_API_KEY` + browser session at opencode.ai | Zen models (API key) + balance, monthly limit/usage, subscription, payment method (cookie) |
-| **xAI (Grok)** | `XAI_API_KEY` | Rate limits, API key info |
-| **Z.AI Coding Plan** | `ZAI_API_KEY` / `ZHIPUAI_API_KEY` | Coding plan quotas, model/tool usage, daily trends |
-| **Google Gemini API** | `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Rate limits, model limits |
-| **Alibaba Cloud** | `ALIBABA_CLOUD_API_KEY` | Quotas, credits, per-model tracking |
+OpenCode Go quota (5h, weekly, monthly) comes from the OpenCode console and
+needs a browser session. Open the dashboard, go to **Settings -> 5 KEYS ->
+opencode**, and press `c` to import the session cookie. Token usage is read
+from OpenCode's local SQLite store without a browser session.
+
+### Antigravity status line
+
+The Antigravity integration registers this binary as the `agy` status-line
+command:
+
+```bash
+openusage integrations install antigravity
+```
 
 ## Configuration
 
-No config file needed — auto-detection handles everything. Override or extend via:
+No config file is needed. Override or extend via:
 
 - macOS/Linux: `~/.config/openusage/settings.json`
-- Windows: `%APPDATA%\openusage\settings.json`
 
 ```json
 {
@@ -252,21 +115,21 @@ Full reference: [`configs/example_settings.json`](configs/example_settings.json)
 
 ### External themes
 
-You can define custom themes as JSON files loaded at startup from:
+Custom themes are JSON files loaded at startup from:
 
-- `~/.config/openusage/themes/*.json` (macOS/Linux)
-- `%APPDATA%\\openusage\\themes\\*.json` (Windows)
+- `~/.config/openusage/themes/*.json`
 - Any extra directory in `OPENUSAGE_THEME_DIR` (path-list separated)
 
-Theme files use the same color token fields as built-ins. Browse the bundled examples for reference shapes — every shipped theme lives at [`internal/tui/bundled_themes/`](internal/tui/bundled_themes/).
+Theme files use the same color token fields as the built-in themes. Every
+bundled theme lives under [`internal/tui/bundled_themes/`](internal/tui/bundled_themes/).
 
 ## Daemon
 
-Background data collection, even when the dashboard isn't open:
+The daemon collects data continuously, even when the dashboard is closed:
 
 ```bash
 openusage telemetry daemon                # Run in foreground
-openusage telemetry daemon install        # Install as system service (launchd / systemd)
+openusage telemetry daemon install        # Install as a launchd or systemd user service
 openusage telemetry daemon status         # Check status
 openusage telemetry daemon uninstall      # Uninstall
 ```
@@ -297,7 +160,7 @@ openusage integrations uninstall <id>     # Remove
 | `/` | Filter providers |
 | `t` | Cycle theme |
 | `w` | Cycle time window |
-| `c` | Cycle cost visibility for focused tile (auto → hide → show → auto, persists per-account) |
+| `c` | Cycle cost visibility for focused tile (auto -> hide -> show -> auto, persists per-account) |
 | `,` | Open settings |
 | `Shift+J` / `Shift+K` | Reorder providers |
 | `?` | Help |
@@ -310,7 +173,6 @@ make build    # Build binary to ./bin/openusage
 make test     # Run tests with -race and coverage
 make lint     # golangci-lint
 make run      # go run cmd/openusage/main.go
-make demo     # Preview with simulated data (no API keys needed)
 ```
 
 Debug mode: `OPENUSAGE_DEBUG=1 openusage`

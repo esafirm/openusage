@@ -402,6 +402,23 @@ func (a *conversationAllTime) addTool(item jsonlContent) {
 	}
 }
 
+// conversationProjectLabel derives a stable project label from the turn's cwd,
+// falling back to the parent directory of the JSONL file.
+func conversationProjectLabel(cwd, sourcePath string) string {
+	if cwd != "" {
+		base := filepath.Base(cwd)
+		if base != "" && base != "." && base != string(filepath.Separator) {
+			return sanitizeModelName(base)
+		}
+		return sanitizeModelName(cwd)
+	}
+	dir := filepath.Base(filepath.Dir(sourcePath))
+	if dir == "" || dir == "." {
+		return "unknown"
+	}
+	return sanitizeModelName(dir)
+}
+
 // addUsage records one deduplicated usage record.
 func (a *conversationAllTime) addUsage(u conversationRecord, cost float64) {
 	modelID := sanitizeModelName(u.model)

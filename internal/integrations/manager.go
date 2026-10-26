@@ -15,7 +15,6 @@ type ID string
 
 const (
 	OpenCodeID    ID = "opencode"
-	CodexID       ID = "codex"
 	ClaudeCodeID  ID = "claude_code"
 	AntigravityID ID = "antigravity"
 )

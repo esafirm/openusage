@@ -37,7 +37,7 @@ func TestTelemetryHookAcceptsPositionalPayload(t *testing.T) {
 	cmd.SetArgs([]string{
 		"--spool-only",
 		"--spool-dir", spoolDir,
-		"codex",
+		"opencode",
 		`{"type":"agent-turn-complete","turn-id":"t1"}`,
 	})
 	// No stdin is provided; the positional payload must be used. To prove the

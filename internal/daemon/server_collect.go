@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/janekbaraniewski/openusage/internal/config"
-	"github.com/janekbaraniewski/openusage/internal/core"
 	"github.com/janekbaraniewski/openusage/internal/telemetry"
 )
 
@@ -54,30 +53,6 @@ func (s *Service) runCollectLoop(ctx context.Context) {
 			interval = s.cfg.CollectInterval
 		}
 	}
-}
-
-// pushToExporter forwards a freshly-computed snapshot set to the remote-hub
-// exporter, if one is configured.
-//
-// Intentionally called from the read-model cache refresh path
-// (server_read_model.go), NOT from collectAndFlush. Rationale:
-//
-//   - collectAndFlush deals with raw telemetry IngestRequests, not the
-//     aggregated UsageSnapshot map the hub expects.
-//   - The read-model cache already projects raw telemetry into
-//     core.UsageSnapshot shape via ApplyCanonicalTelemetryViewWithOptions,
-//     which is exactly what the hub consumes.
-//   - Piggy-backing on refreshReadModelCacheAsync means the exporter sees the
-//     same view the local dashboard would see, with no extra SQL work.
-//
-// Consequence: daemon-mode exports only flow after the first successful
-// read-model refresh, which requires configured accounts. This is documented
-// in docs/REMOTE_EXPORTER_DESIGN.md §5.6.
-func (s *Service) pushToExporter(_ context.Context, snaps map[string]core.UsageSnapshot) {
-	if s.exp == nil || len(snaps) == 0 {
-		return
-	}
-	s.exp.Ingest(snaps)
 }
 
 func (s *Service) collectAndFlush(ctx context.Context) int {

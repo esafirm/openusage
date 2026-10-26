@@ -207,9 +207,6 @@ func buildDetailUsageSection(snap core.UsageSnapshot, widget core.DashboardWidge
 
 // buildDetailGaugeLines builds gauge bars for the detail view.
 func buildDetailGaugeLines(snap core.UsageSnapshot, widget core.DashboardWidget, innerW int, warnThresh, critThresh float64, now time.Time) []string {
-	if snap.ProviderID == "codex" {
-		return buildCodexQuotaLines(snap, innerW, warnThresh, critThresh, now)
-	}
 	maxLabelW := 18
 	gaugeW := innerW - maxLabelW - 10
 	if gaugeW < 8 {
@@ -374,7 +371,7 @@ func buildDetailCostSection(snap core.UsageSnapshot, widget core.DashboardWidget
 
 // buildDetailProjectionSection builds budget forecast projections (detail-only data).
 func buildDetailProjectionSection(snap core.UsageSnapshot, innerW int) []string {
-	lines := buildDetailCodexCreditForecastSection(snap, innerW)
+	var lines []string
 	costSummary := core.ExtractAnalyticsCostSummary(snap)
 	if costSummary.BurnRateUSD <= 0 {
 		return lines
@@ -436,51 +433,6 @@ func buildDetailProjectionSection(snap core.UsageSnapshot, innerW int) []string 
 	return lines
 }
 
-// buildDetailCodexCreditForecastSection renders Codex's subscription credit
-// quota alongside Claude Code's cost-based forecast. Codex credits are quota
-// units rather than USD, so they intentionally do not reuse burn_rate, whose
-// shared analytics meaning is dollars per hour.
-func buildDetailCodexCreditForecastSection(snap core.UsageSnapshot, innerW int) []string {
-	var lines []string
-
-	if metric, ok := snap.Metrics["codex_credit_limit"]; ok && metric.Limit != nil && metric.Used != nil {
-		used := *metric.Used
-		limit := *metric.Limit
-		percent := float64(0)
-		if limit > 0 {
-			percent = used / limit * 100
-		}
-		lines = append(lines, renderDotLeaderRow("Credit Usage",
-			fmt.Sprintf("%s / %s credits (%.0f%%)", formatNumber(used), formatNumber(limit), percent), innerW))
-	}
-
-	rateMetric, hasRate := snap.Metrics["codex_credit_burn_rate"]
-	if hasRate && rateMetric.Used != nil && *rateMetric.Used > 0 {
-		lines = append(lines, renderDotLeaderRow("Credit Rate",
-			fmt.Sprintf("%s credits/hour", formatNumber(*rateMetric.Used)), innerW))
-	}
-
-	if runoutMetric, ok := snap.Metrics["codex_credit_runout_hours"]; ok && runoutMetric.Used != nil {
-		hours := *runoutMetric.Used
-		if hours >= 0 {
-			value := "now"
-			if hours > 0 {
-				if hours < 24 {
-					value = fmt.Sprintf("%.1fh left", hours)
-				} else {
-					value = fmt.Sprintf("%.1f days left", hours/24)
-				}
-			}
-			if hasRate && rateMetric.Used != nil && *rateMetric.Used > 0 {
-				value += fmt.Sprintf(" at %s credits/hour", formatNumber(*rateMetric.Used))
-			}
-			lines = append(lines, renderDotLeaderRow("Credit Forecast", value, innerW))
-		}
-	}
-
-	return lines
-}
-
 // buildDetailToolSection builds the tool usage section.
 func buildDetailToolSection(snap core.UsageSnapshot, widget core.DashboardWidget, innerW int) []string {
 	actualLines, _ := buildActualToolUsageLines(snap, innerW, true)
@@ -533,8 +485,7 @@ func buildDetailOtherMetrics(snap core.UsageSnapshot, widget core.DashboardWidge
 	for _, ck := range []string{"today_api_cost", "today_cost", "5h_block_cost", "7d_api_cost",
 		"all_time_api_cost", "total_cost_usd", "window_cost", "monthly_spend",
 		"credit_balance", "spend_limit", "plan_spend", "plan_total_spend_usd",
-		"plan_limit_usd", "plan_percent_used", "individual_spend", "burn_rate",
-		"codex_credit_limit", "codex_credit_percent_used", "codex_credit_burn_rate", "codex_credit_runout_hours"} {
+		"plan_limit_usd", "plan_percent_used", "individual_spend", "burn_rate"} {
 		skipKeys[ck] = true
 	}
 

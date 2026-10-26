@@ -10,12 +10,12 @@ This page walks through what happens the first time you start OpenUsage, what yo
 
 ## Before you start
 
-You don't need a config file. OpenUsage will create `~/.config/openusage/settings.json` (or `%APPDATA%\openusage\settings.json` on Windows) the first time it persists state — but the dashboard works fine without one.
+You don't need a config file. OpenUsage will create `~/.config/openusage/settings.json` the first time it persists state — but the dashboard works fine without one.
 
 The more of the following you have on your machine, the more populated the dashboard will be:
 
 - **Coding tools**: `claude` CLI, `cursor`, `codex`, `gemini`, `gh` (with Copilot extension), `ollama`, `aider`
-- **API keys** — set as env vars in your shell (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `MOONSHOT_API_KEY`, `XAI_API_KEY`, `ZAI_API_KEY`, `GEMINI_API_KEY`, `ALIBABA_CLOUD_API_KEY`), exported in your shell rc files (`~/.zshrc`, `~/.bashrc`, `~/.config/fish/config.fish`, modular `~/.zshrc.d/*`), or stored by Aider/OpenCode/Codex in their config files. macOS keychain entries from the Claude Code CLI are also picked up.
+- **API keys** - set `OPENAI_API_KEY` or `OPENCODE_API_KEY` / `ZEN_API_KEY` in your shell or shell rc files. macOS keychain entries from the Claude Code CLI are also picked up.
 
 A complete list of env-var names lives in [Environment variables](../reference/env-vars.md). To preview what will be detected before launch, run `openusage detect`.
 
@@ -41,15 +41,11 @@ A tile shows the most useful number per provider, plus a status. Examples of wha
 
 | Provider | Primary metric | What's interesting |
 |---|---|---|
-| Claude Code | Cost (API key) / 5h block (Pro / Max) | Per-model token mix, current 5h billing block, burn rate. Cost is hidden by default on Pro / Max subscriptions — see [`dashboard.hide_costs`](../reference/configuration.md#dashboardhide_costs). |
-| Cursor | Plan spend | Used vs included, plus AI code score |
+| Claude Code | Cost / 5h block | Per-model token mix, current 5h billing block, burn rate. Cost is hidden by default on Pro / Max subscriptions - see [`dashboard.hide_costs`](../reference/configuration.md#dashboardhide_costs). |
+| OpenCode | OpenCode Go quota / balance | 5h, weekly, and monthly windows, Zen models, model mix |
+| Antigravity | Session quota | Context usage, session tokens, quota windows |
 | Copilot | Quota remaining | Chat / completions / premium interactions |
-| OpenRouter | Credits | Daily/weekly/monthly usage, model mix |
 | OpenAI | Rate limits | rpm/tpm limit and remaining (header probe only) |
-| Anthropic | Rate limits | rpm/tpm limit and remaining (header probe only) |
-| Mistral | Monthly spend (EUR) | Calendar-month spend, token totals |
-| Moonshot | Balance breakdown | Cash + voucher (USD region) or CNY region |
-| Ollama | Local models | Loaded models, VRAM, request rate from logs |
 
 The full per-provider breakdown is in the [Provider catalog](../providers/index.md).
 
@@ -90,13 +86,13 @@ Press <kbd>,</kbd> to open the settings modal. Tabs:
 4. **View** — Grid / Stacked / Tabs / Split / Compare
 5. **API Keys** — paste keys interactively
 6. **Telemetry** — link unmapped telemetry sources to providers
-7. **Integrations** — install hooks for Claude Code, Codex, OpenCode
+7. **Integrations** — install hooks for Claude Code, OpenCode, Antigravity
 
 Move around with <kbd>j</kbd>/<kbd>k</kbd>, toggle/apply with <kbd>Space</kbd> or <kbd>Enter</kbd>, reorder with <kbd>Shift+J</kbd>/<kbd>Shift+K</kbd>. Close with <kbd>,</kbd> or <kbd>Esc</kbd>.
 
 ## Step 6 — Install agent integrations
 
-For per-turn detail from agents you actually use (Claude Code, Codex, OpenCode), install the matching hook. Each one posts every turn directly to the daemon, capturing detail polling alone cannot see:
+For per-turn detail from agents you actually use (Claude Code, OpenCode, Antigravity), install the matching hook. Each one posts every turn directly to the daemon, capturing detail polling alone cannot see:
 
 ```bash
 openusage integrations install claude_code

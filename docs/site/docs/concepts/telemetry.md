@@ -14,7 +14,7 @@ Telemetry stays local. The daemon listens on a Unix domain socket only; no TCP, 
 Polling alone has limits:
 
 - Provider APIs only show aggregates, not individual turns.
-- Some agents (Claude Code, Codex, OpenCode) record per-message detail in local files that change faster than a 30s poll can catch.
+- Some agents (Claude Code, OpenCode, Antigravity) record per-message detail in local files that change faster than a 30s poll can catch.
 - Multiple sources of the same event need to be merged without double-counting.
 
 The pipeline addresses all three by ingesting **events** from multiple sources, deduplicating them, and persisting the canonical set in SQLite.
@@ -53,7 +53,7 @@ The pipeline addresses all three by ingesting **events** from multiple sources, 
 
 ### Hooks
 
-Tools you've integrated (Claude Code, Codex, OpenCode) post each turn or message to the daemon over the socket as it happens. Output: high-resolution `usage_events` and a copy in `raw_events` for forensics.
+Tools you've integrated (Claude Code, OpenCode, Antigravity) post each turn or message to the daemon over the socket as it happens. Output: high-resolution `usage_events` and a copy in `raw_events` for forensics.
 
 ```
 POST /v1/hook/{source}?account_id=…
@@ -168,7 +168,7 @@ Pruning runs periodically in the daemon. If you reduce retention, older data is 
 | Survives short daemon outages | spool |
 | Bounded disk usage | retention |
 
-If you live mostly in Claude Code, Codex, or OpenCode, installing the matching integration is the single biggest data-quality upgrade the daemon offers — it turns a coarse polling cycle into a per-message stream.
+If you live mostly in Claude Code, OpenCode, or Antigravity, installing the matching integration is the single biggest data-quality upgrade the daemon offers — it turns a coarse polling cycle into a per-message stream.
 
 ## Where to read next
 

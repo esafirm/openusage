@@ -48,11 +48,10 @@ The ratio reflects **token coverage**, not dollars saved. Cache reads are billed
 There are two paths, both using the same formula:
 
 - **Daemon / telemetry mode** — computed once in the telemetry read model from the per-model `input` / `cache_read` / `cache_write` token sums already stored in SQLite. Every telemetry-backed provider gets a window-scoped ratio from this single place.
-- **Direct mode** (no daemon) — the provider's own fetch computes it from the token totals it already reads locally. Claude Code, Codex, and OpenRouter do this so the gauge works without running the daemon.
+- **Direct mode** (no daemon) - the provider's own fetch computes it from the token totals it already reads locally. The Claude Code provider does this so the gauge works without running the daemon.
 
 ## Related
 
-- [Claude Code](../providers/claude-code.md) — per-model cache read / cache create token breakdown
-- [Codex CLI](../providers/codex.md)
-- [OpenRouter](../providers/openrouter.md)
-- [Daemon & telemetry](../daemon/integrations.md) — collecting per-turn token events for the providers that need it
+- [Claude Code](../providers/claude-code.md) - per-model cache read / cache create token breakdown
+- [OpenCode](../providers/opencode.md)
+- [Daemon & telemetry](../daemon/integrations.md) - collecting per-turn token events for the providers that need it

@@ -82,7 +82,7 @@ func TestBuildDetailTrendsSection_IncludesBreakdownCharts(t *testing.T) {
 	widget := core.DefaultDashboardWidget()
 	widget.ShowClientComposition = true
 
-	lines := buildDetailTrendsSection(snap, widget, 96, core.TimeWindowAll)
+	lines := buildDetailTrendsSectionWithHide(snap, widget, 96, core.TimeWindowAll, false)
 	out := stripANSI(strings.Join(lines, "\n"))
 
 	for _, title := range []string{"Model Breakdown", "Client Breakdown", "Project Breakdown", "MCP Usage"} {

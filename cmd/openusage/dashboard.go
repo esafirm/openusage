@@ -15,7 +15,6 @@ import (
 	"github.com/janekbaraniewski/openusage/internal/core"
 	"github.com/janekbaraniewski/openusage/internal/daemon"
 	"github.com/janekbaraniewski/openusage/internal/dashboardapp"
-	"github.com/janekbaraniewski/openusage/internal/exporter"
 	"github.com/janekbaraniewski/openusage/internal/tui"
 	"github.com/janekbaraniewski/openusage/internal/version"
 )
@@ -147,25 +146,12 @@ func runDashboard(cfg config.Config) {
 		)
 	}()
 
-	var exp *exporter.Exporter
-	if strings.TrimSpace(cfg.Export.Target) != "" {
-		if e, err := exporter.New(cfg.Export); err != nil {
-			log.Printf("exporter: init failed: %v", err)
-		} else {
-			exp = e
-			go exp.Start(ctx)
-		}
-	}
-
 	daemon.StartBroadcaster(
 		ctx,
 		viewRuntime,
 		interval,
 		func(frame daemon.SnapshotFrame) {
 			dispatcher.dispatch(frame)
-			if exp != nil {
-				exp.Ingest(frame.Snapshots)
-			}
 		},
 		func(state daemon.DaemonState) {
 			program.Send(mapDaemonState(state))

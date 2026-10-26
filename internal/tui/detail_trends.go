@@ -18,13 +18,6 @@ func cropSeriesToWindow(pts []core.TimePoint, window core.TimeWindow) []core.Tim
 	return clipAndPadPointsByRecentDays(pts, days, time.Now().UTC())
 }
 
-// buildDetailTrendsSection builds the daily trends + charts section.
-// Unlike the tile view which shows one chart + sparklines, the detail view
-// renders a full Braille chart for EACH available data series.
-func buildDetailTrendsSection(snap core.UsageSnapshot, widget core.DashboardWidget, innerW int, timeWindow core.TimeWindow) []string {
-	return buildDetailTrendsSectionWithHide(snap, widget, innerW, timeWindow, false)
-}
-
 // The Cost sparkline and Cost full chart are suppressed when hideCosts is true.
 func buildDetailTrendsSectionWithHide(snap core.UsageSnapshot, widget core.DashboardWidget, innerW int, timeWindow core.TimeWindow, hideCosts bool) []string {
 	var lines []string

@@ -7,10 +7,6 @@ import (
 	"github.com/janekbaraniewski/openusage/internal/core"
 )
 
-func buildProviderVendorCompositionLines(snap core.UsageSnapshot, innerW int, expanded bool) ([]string, map[string]bool) {
-	return buildProviderVendorCompositionLinesWithHide(snap, innerW, expanded, false)
-}
-
 // buildProviderVendorCompositionLinesWithHide is the hide-costs-aware variant.
 // When hideCosts is true and burn mode resolves to "cost", we fall back to
 // tokens/requests so the section never renders dollar segments.
@@ -140,10 +136,6 @@ func collectProviderVendorMix(snap core.UsageSnapshot) ([]providerMixEntry, map[
 		})
 	}
 	return providers, usedKeys
-}
-
-func buildUpstreamProviderCompositionLines(snap core.UsageSnapshot, innerW int, expanded bool) ([]string, map[string]bool) {
-	return buildUpstreamProviderCompositionLinesWithHide(snap, innerW, expanded, false)
 }
 
 // buildUpstreamProviderCompositionLinesWithHide is the hide-costs-aware variant.
@@ -282,10 +274,6 @@ func buildProviderColorMap(providers []providerMixEntry, providerID string) map[
 		colors[provider.name] = distributedPaletteColor(base, i)
 	}
 	return colors
-}
-
-func buildProviderDailyTrendLines(snap core.UsageSnapshot, innerW int) []string {
-	return buildProviderDailyTrendLinesWithHide(snap, innerW, false)
 }
 
 func buildProviderDailyTrendLinesWithHide(snap core.UsageSnapshot, innerW int, hideCosts bool) []string {

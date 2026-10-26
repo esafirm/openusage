@@ -473,22 +473,13 @@ type usageAuthSource struct {
 	prepare func() (url string, setAuth func(*http.Request), err error)
 }
 
-// usageAuthSources lists the auth sources in priority order: cookie/org
-// (macOS desktop app) first, then the CLI's own OAuth token as the fallback
-// used everywhere the desktop app's session cookies aren't available.
+// usageAuthSources lists the auth sources in priority order. OAuth is first
+// because it never prompts: the CLI's token lives in a plain file. The
+// desktop-cookie source can touch the macOS keychain, so it is only offered
+// when the process is interactive (setup/validation) or the user explicitly
+// opts in with OPENUSAGE_CLAUDE_DESKTOP_COOKIES=1.
 func (p *Provider) usageAuthSources(orgUUID string) []usageAuthSource {
-	return []usageAuthSource{
-		{
-			name: "cookie",
-			prepare: func() (string, func(*http.Request), error) {
-				cookies, err := getClaudeSessionCookies()
-				if err != nil {
-					return "", nil, err
-				}
-				url := fmt.Sprintf("https://claude.ai/api/organizations/%s/usage", orgUUID)
-				return url, cookieAuthHeaders(cookies), nil
-			},
-		},
+	sources := []usageAuthSource{
 		{
 			name: "oauth",
 			prepare: func() (string, func(*http.Request), error) {
@@ -500,6 +491,20 @@ func (p *Provider) usageAuthSources(orgUUID string) []usageAuthSource {
 			},
 		},
 	}
+	if claudeDesktopCookieAuthAllowed() {
+		sources = append(sources, usageAuthSource{
+			name: "cookie",
+			prepare: func() (string, func(*http.Request), error) {
+				cookies, err := getClaudeSessionCookies()
+				if err != nil {
+					return "", nil, err
+				}
+				url := fmt.Sprintf("https://claude.ai/api/organizations/%s/usage", orgUUID)
+				return url, cookieAuthHeaders(cookies), nil
+			},
+		})
+	}
+	return sources
 }
 
 // cookieAuthHeaders builds the auth closure for the cookie/org usage source:
@@ -598,7 +603,6 @@ func (p *Provider) tryUsageAuthSource(ctx context.Context, src usageAuthSource, 
 func (p *Provider) applyFetchedUsage(usage *usageResponse, snap *core.UsageSnapshot, source string) {
 	p.setCachedUsage(usage)
 	applyUsageResponse(usage, snap, time.Now())
-	cacheFiveHourFromSnapshot(snap)
 	snap.Raw["usage_api_ok"] = "true"
 	snap.Raw["usage_api_source"] = source
 }
@@ -613,20 +617,6 @@ func (p *Provider) applyCachedUsage(snap *core.UsageSnapshot) bool {
 	applyUsageResponse(cached, snap, time.Now())
 	snap.Raw["usage_api_cached"] = "true"
 	return true
-}
-
-// cacheFiveHourFromSnapshot persists the freshly-resolved 5h usage % to the
-// shared disk cache. Surfaces that render under a tight time budget (the tmux
-// status bar, the statusline) cannot afford the slow live usage fetch, so any
-// full fetch — most importantly the daemon's 30s poll — warms this fallback
-// for them. Best-effort: a missing metric or unwritable cache is ignored.
-func cacheFiveHourFromSnapshot(snap *core.UsageSnapshot) {
-	if snap == nil {
-		return
-	}
-	if m, ok := snap.Metrics["usage_five_hour"]; ok && m.Used != nil {
-		WriteFiveHourCache(*m.Used)
-	}
 }
 
 func (p *Provider) getCachedUsage() *usageResponse {

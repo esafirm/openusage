@@ -1,37 +1,5 @@
 package pricing
 
-import "sort"
-
-// canonical tier thresholds (in tokens) supported by the resolver.
-var tierThresholds = []int{128_000, 200_000, 256_000, 272_000}
-
-// ResolveTier walks a tier ladder (sorted ascending by AppliesAbove) and
-// returns the most specific Price whose threshold the supplied contextLen
-// crosses. If no entry matches, it returns the lowest tier (base) or a
-// zero Price when prices is empty.
-//
-// The function does not mutate prices.
-func ResolveTier(prices []TieredPrice, contextLen int) Price {
-	if len(prices) == 0 {
-		return Price{}
-	}
-	sorted := make([]TieredPrice, len(prices))
-	copy(sorted, prices)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		return sorted[i].AppliesAbove < sorted[j].AppliesAbove
-	})
-
-	chosen := sorted[0].Price
-	for _, tp := range sorted {
-		if contextLen > tp.AppliesAbove {
-			chosen = tp.Price
-			continue
-		}
-		break
-	}
-	return chosen
-}
-
 // ApplyTier resolves base + tier overrides at a given context length and
 // returns a flat Price whose rates already reflect the chosen tier (so
 // callers don't have to inspect Tiers themselves).

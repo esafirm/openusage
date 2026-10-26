@@ -224,58 +224,6 @@ func CollectFilesByExt(roots []string, exts map[string]bool) ([]string, error) {
 	return uniqueStrings(files), nil
 }
 
-// CollectFilesWithStat is like CollectFilesByExt but returns os.FileInfo
-// for each file, enabling mtime+size cache invalidation.
-func CollectFilesWithStat(roots []string, exts map[string]bool) (map[string]os.FileInfo, error) {
-	result := make(map[string]os.FileInfo)
-	for _, root := range roots {
-		root = ExpandHome(root)
-		if root == "" {
-			continue
-		}
-		info, err := os.Stat(root)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("stat %s: %w", root, err)
-		}
-		if info == nil {
-			continue
-		}
-		if !info.IsDir() {
-			ext := strings.ToLower(filepath.Ext(root))
-			if exts[ext] {
-				result[root] = info
-			}
-			continue
-		}
-		if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if d == nil || d.IsDir() {
-				return nil
-			}
-			ext := strings.ToLower(filepath.Ext(path))
-			if !exts[ext] {
-				return nil
-			}
-			fi, err := d.Info()
-			if err != nil {
-				return err
-			}
-			if fi != nil {
-				result[path] = fi
-			}
-			return nil
-		}); err != nil {
-			return nil, fmt.Errorf("walk %s: %w", root, err)
-		}
-	}
-	return result, nil
-}
-
 func uniqueStrings(in []string) []string {
 	return core.SortedCompactStrings(in)
 }
