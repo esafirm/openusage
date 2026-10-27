@@ -1,6 +1,6 @@
 ---
 title: OpenUsage docs
-description: Local-first terminal dashboard for AI tool spend, quotas, and rate limits across five providers.
+description: Local-first terminal dashboard for AI tool spend, quotas, and rate limits across six providers.
 slug: /
 sidebar_position: 1
 sidebar_label: Welcome
@@ -9,7 +9,7 @@ hide_table_of_contents: true
 
 # OpenUsage
 
-Local-first terminal dashboard for AI tool spend, quotas, and rate limits across **five providers** - Claude Code, OpenCode, Antigravity, OpenAI, and GitHub Copilot.
+Local-first terminal dashboard for AI tool spend, quotas, and rate limits across **six providers** - Claude Code, Codex, OpenCode, Antigravity, OpenAI, and GitHub Copilot.
 
 ```bash
 brew install janekbaraniewski/tap/openusage
@@ -57,7 +57,7 @@ Run `brew trust janekbaraniewski/tap` once so OpenUsage stays linked across `bre
   <div className="card">
     <a href="./providers/">
       <h3>Provider catalog</h3>
-      <p>Setup notes for the five providers with detection details.</p>
+      <p>Setup notes for the six providers with detection details.</p>
     </a>
   </div>
   <div className="card">

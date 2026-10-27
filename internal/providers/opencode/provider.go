@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -53,9 +54,9 @@ func New() *Provider {
 				APIKeyEnv:           "OPENCODE_API_KEY",
 				DefaultAccountID:    "opencode",
 				SupplementalTypes:   []core.ProviderAuthType{core.ProviderAuthTypeBrowserSession},
-				BrowserCookieDomain: ".opencode.ai",
-				BrowserCookieName:   "auth",
-				BrowserConsoleURL:   "https://opencode.ai/auth",
+				BrowserCookieDomain: "opencode.ai",
+				BrowserCookieName:   "__Host-console_session",
+				BrowserConsoleURL:   "https://opencode.ai/console",
 			},
 			Setup: core.ProviderSetupSpec{
 				Quickstart: []string{
@@ -90,7 +91,7 @@ func New() *Provider {
 				// fixed 7 days) and duplicates tool_calls_today; the window_*
 				// figures are already the tile's hero line.
 				providerbase.WithHideMetricKeys("7d_tool_calls"),
-				providerbase.WithGaugePriority("rolling_usage", "weekly_usage", "monthly_usage_pct", "console_balance", "monthly_limit"),
+				providerbase.WithGaugePriority("rolling_usage", "weekly_usage", "monthly_usage_pct"),
 				// OpenCode Go quota has three meaningful usage-window
 				// percentages (5h / 7d / ~30d monthly) — the default cap of 2
 				// gauge lines would always bump the monthly figure in favor
@@ -282,165 +283,183 @@ var loadStoredSession = func(accountID string) (config.BrowserSession, bool, err
 	return config.LoadSession(accountID)
 }
 
-// enrichFromConsole loads the stored browser session for the account, calls
-// the OpenCode console RPCs, and merges the results into the snapshot's
-// metrics + attributes. Returns errNoCookieConfigured when the user hasn't
-// opted in to browser-session auth.
+// enrichFromConsole merges the account's console sessions into the snapshot.
+//
+// Two sessions are supported:
+//   - sessions[accountID]        the primary (Zen balance + 30d spend)
+//   - sessions[accountID+"-go"]  the OpenCode Go account (5h/weekly/monthly
+//     meters). A user can have different accounts in different browser
+//     profiles, so this is a separate credential rather than a second account
+//     on the dashboard.
+//
+// Returns errNoCookieConfigured when neither session is stored.
 func (p *Provider) enrichFromConsole(ctx context.Context, acct core.AccountConfig, snap *core.UsageSnapshot) error {
-	// Load directly from stored credentials to avoid the browser refresh
-	// in LoadOrRefreshBrowserSession, which can overwrite stored sessions
-	// when multiple accounts use different browsers for the same domain.
-	session, ok, err := loadStoredSession(acct.ID)
-	if err != nil || !ok || session.Value == "" {
+	type consoleSession struct {
+		session config.BrowserSession
+		primary bool
+		hintKey string
+	}
+
+	var sessions []consoleSession
+	if sess, ok, err := loadStoredSession(acct.ID); err == nil && ok && sess.Value != "" {
+		sessions = append(sessions, consoleSession{session: sess, primary: true, hintKey: "opencode_workspace_id"})
+	}
+	if sess, ok, err := loadStoredSession(acct.ID + "-go"); err == nil && ok && sess.Value != "" {
+		sessions = append(sessions, consoleSession{session: sess, primary: false, hintKey: "opencode_go_workspace_id"})
+	}
+	if len(sessions) == 0 {
 		return errNoCookieConfigured
 	}
 
-	client := newConsoleClient(session.Value, session.CookieName, "")
-	workspaceID := strings.TrimSpace(acct.Hint("opencode_workspace_id", ""))
-	if workspaceID == "" {
-		workspaceID, err = client.DiscoverWorkspaceID(ctx)
-		if err != nil {
-			snap.SetDiagnostic("opencode_console_workspace_error", err.Error())
-			return errNoCookieConfigured
+	var lastErr error
+	for _, item := range sessions {
+		if err := p.enrichConsoleSession(ctx, acct, snap, item.session, item.primary, item.hintKey); err != nil {
+			lastErr = err
+			key := "opencode_console_error"
+			if !item.primary {
+				key = "opencode_go_console_error"
+			}
+			snap.SetDiagnostic(key, err.Error())
+			continue
 		}
+	}
+
+	if lastErr != nil && !hasConsoleData(snap) {
+		return lastErr
+	}
+	return nil
+}
+
+func (p *Provider) enrichConsoleSession(
+	ctx context.Context,
+	acct core.AccountConfig,
+	snap *core.UsageSnapshot,
+	session config.BrowserSession,
+	primary bool,
+	hintKey string,
+) error {
+	client := newConsoleClient(session.Value, session.CookieName, "")
+	workspaceID := strings.TrimSpace(acct.Hint(hintKey, ""))
+	if workspaceID == "" {
+		discovered, err := client.DiscoverWorkspaceID(ctx)
+		if err != nil {
+			return err
+		}
+		workspaceID = discovered
 	}
 	client.WorkspaceID = workspaceID
 
-	// Fetch billing info and subscription usage from the Go usage page HTML.
-	// This is more reliable than individual RPC calls whose content-hash
-	// IDs rotate on every backend deploy. The page embeds both billing.get
-	// and lite.subscription.get data in a Seroval script blob.
-	subscription, billing, pageErr := client.FetchGoUsagePage(ctx, workspaceID)
-
-	// If HTML scraping fails, fall back to individual RPC calls.
-	billingFailed := false
-
-	if pageErr != nil {
-		snap.SetDiagnostic("opencode_page_scrape_error", pageErr.Error())
-		billingFailed = true
-	}
-
-	// Fallback: try individual billing RPC if page scraping didn't get billing data.
-	var fallbackErr error
-	if billingFailed || (billing.Balance == 0 && billing.MonthlyUsage == 0 && billing.MonthlyLimit == nil) {
-		billingRPC, err := client.QueryBillingInfo(ctx)
-		if err == nil {
-			billing = billingRPC
-			billingFailed = false
-		} else if billingFailed {
-			// Only treat the fallback's error as fatal when the primary page
-			// scrape had already failed. If the page scrape succeeded with a
-			// genuine zero balance, a failing fallback isn't itself a problem.
-			fallbackErr = err
+	var errs []error
+	billing, billingErr := client.FetchBillingStatus(ctx)
+	if billingErr != nil {
+		errs = append(errs, billingErr)
+	} else {
+		summary, summaryErr := client.FetchUsageSummary(ctx)
+		if summaryErr != nil {
+			snap.SetDiagnostic("opencode_console_usage_error", summaryErr.Error())
 		}
-	}
-
-	if billingFailed {
-		// Both the page scrape and the billing RPC fallback failed. Return
-		// the error instead of falling through to write zero-valued billing
-		// metrics into the snapshot as if they were real data — that would
-		// present "$0.00 balance" for what may actually be an expired
-		// session that needs reauthentication.
-		var authErr *ConsoleAuthError
-		switch {
-		case errors.As(fallbackErr, &authErr):
-			return fallbackErr
-		case errors.As(pageErr, &authErr):
-			return pageErr
-		default:
-			return fmt.Errorf("opencode console: billing unavailable (page scrape: %v, fallback: %v)", pageErr, fallbackErr)
+		if _, exists := snap.Metrics["console_balance"]; !exists {
+			applyConsoleBilling(snap, billing, summary, summaryErr == nil)
 		}
+		snap.SetAttribute("console_session_browser", session.SourceBrowser)
+		snap.SetAttribute("auth_scope", "zen+console")
 	}
 
-	// Process billing info.
-	available := billing.Balance / 1e8
-	usage := billing.MonthlyUsage / 1e8
+	goStatus, goErr := client.FetchGoStatus(ctx)
+	if goErr != nil {
+		if !isConsoleNotFound(goErr) {
+			errs = append(errs, goErr)
+		}
+	} else if goStatus.Access != nil {
+		if _, exists := snap.Metrics["rolling_usage"]; !exists {
+			applyGoStatus(snap, goStatus)
+		}
+		snap.SetAttribute("console_session_browser", session.SourceBrowser)
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
+}
+
+func hasConsoleData(snap *core.UsageSnapshot) bool {
+	if _, ok := snap.Metrics["console_balance"]; ok {
+		return true
+	}
+	_, ok := snap.Metrics["rolling_usage"]
+	return ok
+}
+
+func isConsoleNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "http 404")
+}
+
+func applyConsoleBilling(snap *core.UsageSnapshot, billing consoleBillingStatus, summary consoleUsageSummary, hasSummary bool) {
+	available := microCentsToUSD(billing.AvailableMicroCents)
+	if billing.AvailableMicroCents == 0 {
+		available = microCentsToUSD(billing.BalanceMicroCents)
+	}
 	snap.Metrics["console_balance"] = core.Metric{
 		Remaining: core.Float64Ptr(available),
 		Unit:      "USD",
 		Window:    "current",
 	}
-	if billing.MonthlyLimit != nil {
-		limit := *billing.MonthlyLimit / 1e8
+
+	var monthUsage float64
+	if hasSummary {
+		monthUsage = microCentsToUSD(summary.TotalCostMicroCents)
+		snap.Metrics["monthly_usage"] = core.Metric{
+			Used:   core.Float64Ptr(monthUsage),
+			Unit:   "USD",
+			Window: "month",
+		}
+	}
+	if billing.CreditLimitMicroCents != nil {
+		limit := microCentsToUSD(*billing.CreditLimitMicroCents)
 		snap.Metrics["monthly_limit"] = core.Metric{
 			Limit:     core.Float64Ptr(limit),
-			Used:      core.Float64Ptr(usage),
-			Remaining: core.Float64Ptr(limit - usage),
+			Used:      core.Float64Ptr(monthUsage),
+			Remaining: core.Float64Ptr(limit - monthUsage),
 			Unit:      "USD",
 			Window:    "month",
 		}
 	}
-	snap.Metrics["monthly_usage"] = core.Metric{
-		Used:   core.Float64Ptr(usage),
-		Unit:   "USD",
-		Window: "month",
+	if billing.Mode != "" {
+		snap.SetAttribute("billing_type", billing.Mode)
 	}
-	snap.Metrics["reload_amount"] = core.Metric{
-		Limit: core.Float64Ptr(billing.ReloadAmount / 1e8),
-		Unit:  "USD",
+	if billing.BillingMode != "" {
+		snap.SetAttribute("billing_mode", billing.BillingMode)
 	}
-	snap.Metrics["reload_trigger"] = core.Metric{
-		Limit: core.Float64Ptr(billing.ReloadTrigger / 1e8),
-		Unit:  "USD",
+}
+
+func applyGoStatus(snap *core.UsageSnapshot, status consoleGoStatus) {
+	access := status.Access
+	if access == nil {
+		return
 	}
 
-	if billing.SubscriptionPlan != "" {
-		snap.SetAttribute("subscription_plan", billing.SubscriptionPlan)
-	}
-	if billing.HasSubscription {
-		snap.SetAttribute("subscription_status", "active")
-	}
-	if billing.PaymentMethodLast4 != "" {
-		snap.SetAttribute("payment_method_last4", billing.PaymentMethodLast4)
-	}
-	if billing.PaymentMethodType != "" {
-		snap.SetAttribute("payment_method_type", billing.PaymentMethodType)
-	}
-
-	// Process subscription usage (rolling 5h + weekly + monthly percentages).
-	// Gate on the *OK presence flags, not value > 0 — a legitimate 0% reading
-	// (quota window just reset) must still populate the metric.
-	if subscription.RollingUsageOK || subscription.WeeklyUsageOK || subscription.MonthlyUsageOK {
-		if subscription.RollingUsageOK {
-			snap.Metrics["rolling_usage"] = core.Metric{
-				Used:   core.Float64Ptr(subscription.RollingUsagePct),
-				Limit:  core.Float64Ptr(100),
-				Unit:   "percent",
-				Window: "rolling-5h",
-			}
-			if subscription.RollingResetSec > 0 {
-				snap.Resets["rolling_usage_reset"] = snap.Timestamp.Add(
-					time.Duration(subscription.RollingResetSec) * time.Second)
-			}
+	applyMeter := func(key string, meter consoleMeter, window, resetKey string) {
+		if meter.LimitMicroCents <= 0 {
+			return
 		}
-		if subscription.WeeklyUsageOK {
-			snap.Metrics["weekly_usage"] = core.Metric{
-				Used:   core.Float64Ptr(subscription.WeeklyUsagePct),
-				Limit:  core.Float64Ptr(100),
-				Unit:   "percent",
-				Window: "7d",
-			}
-			if subscription.WeeklyResetSec > 0 {
-				snap.Resets["weekly_usage_reset"] = snap.Timestamp.Add(
-					time.Duration(subscription.WeeklyResetSec) * time.Second)
-			}
+		pct := float64(meter.UsedMicroCents) / float64(meter.LimitMicroCents) * 100
+		snap.Metrics[key] = core.Metric{
+			Used:   core.Float64Ptr(pct),
+			Limit:  core.Float64Ptr(100),
+			Unit:   "percent",
+			Window: window,
 		}
-		if subscription.MonthlyUsageOK {
-			snap.Metrics["monthly_usage_pct"] = core.Metric{
-				Used:   core.Float64Ptr(subscription.MonthlyUsagePct),
-				Limit:  core.Float64Ptr(100),
-				Unit:   "percent",
-				Window: "month",
-			}
-			if subscription.MonthlyResetSec > 0 {
-				snap.Resets["monthly_usage_pct_reset"] = snap.Timestamp.Add(
-					time.Duration(subscription.MonthlyResetSec) * time.Second)
-			}
+		if resetsAt, err := time.Parse(time.RFC3339, meter.ResetsAt); err == nil {
+			snap.Resets[resetKey] = resetsAt
 		}
 	}
+	applyMeter("rolling_usage", access.Meters.FiveHour, "rolling-5h", "rolling_usage_reset")
+	applyMeter("weekly_usage", access.Meters.Week, "7d", "weekly_usage_reset")
+	applyMeter("monthly_usage_pct", access.Meters.Month, "month", "monthly_usage_pct_reset")
 
-	snap.SetAttribute("auth_scope", "zen+console")
-	snap.SetAttribute("console_session_browser", session.SourceBrowser)
-
-	return nil
+	snap.SetAttribute("go_product", status.Product)
+	snap.SetAttribute("go_period_ends_at", access.EndsAt)
+	snap.SetAttribute("go_cancel_at_period_end", strconv.FormatBool(status.CancelAtPeriodEnd))
+	snap.SetAttribute("go_use_balance", strconv.FormatBool(status.UseBalance))
 }

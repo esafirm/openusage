@@ -2,7 +2,7 @@
   <img src="./assets/logo.gif" alt="OpenUsage logo">
 </p>
 
-<p align="center"><strong>OpenUsage: terminal-first local quota and usage tracking for Claude Code, OpenCode, Antigravity, OpenAI, and GitHub Copilot.</strong></p>
+<p align="center"><strong>OpenUsage: terminal-first local quota and usage tracking for Claude Code, Codex, OpenCode, Antigravity, OpenAI, and GitHub Copilot.</strong></p>
 
 <p align="center">
   <a href="#install">Install</a> &middot;
@@ -64,11 +64,12 @@ needed.
 
 ## Supported providers
 
-This build ships five providers:
+This build ships six providers:
 
 | Provider | Detection | What it tracks |
 |---|---|---|
 | **Claude Code** | `claude` binary + `~/.claude` | Daily activity, per-model tokens, 5-hour blocks, burn rate, cost estimates |
+| **Codex CLI** | `~/.codex` sessions and auth | ChatGPT/Codex plan usage, 5h/7d rate limits, session tokens, cost estimates |
 | **OpenCode** | `OPENCODE_API_KEY` / `ZEN_API_KEY` or `~/.local/share/opencode/auth.json` | OpenCode Go quota, Zen models, console balance, token usage from the local SQLite store |
 | **Antigravity CLI** | `agy` binary + `~/.gemini/antigravity-cli` | Status-line context, session tokens, quota windows |
 | **OpenAI** | `OPENAI_API_KEY` | RPM/TPM rate limits from the API |

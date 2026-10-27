@@ -54,6 +54,7 @@ func main() {
 	root.AddCommand(newIntegrationsCommand())
 	root.AddCommand(newDetectCommand())
 	root.AddCommand(newAntigravityCommand())
+	root.AddCommand(newCredentialsCommand())
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)

@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/janekbaraniewski/openusage/internal/core"
 )
 
 func TestConsoleClient_QueryBillingInfo_RoundTrip(t *testing.T) {
@@ -142,5 +144,63 @@ func TestParseGoUsagePageHTML_ChangedShapeReturnsError(t *testing.T) {
 		`usagePage:{shape:"changed"}</script></html>`)
 	if err == nil {
 		t.Fatal("parseGoUsagePageHTML returned nil error for an unrecognized page shape")
+	}
+}
+
+func TestFetchGoStatus_ParsesMeters(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/console/api/go/status" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.Header.Get("x-org-id"); got != "wrk_TEST" {
+			t.Errorf("x-org-id = %q, want wrk_TEST", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"product":"go","useBalance":false,"cancelAtPeriodEnd":true,
+			"access":{
+				"startsAt":"2026-09-30T21:28:17.000Z",
+				"endsAt":"2026-10-30T21:28:17.000Z",
+				"meters":{
+					"fiveHour":{"resetsAt":"2026-10-27T03:52:26.000Z","limitMicroCents":"1200000000","usedMicroCents":"97608179"},
+					"week":{"resetsAt":"2026-11-02T00:00:00.000Z","limitMicroCents":"3000000000","usedMicroCents":"321442418"},
+					"month":{"resetsAt":"2026-10-30T21:28:17.000Z","limitMicroCents":"6000000000","usedMicroCents":"4245278075"}
+				}
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewConsoleClient("cookie", "__Host-console_session", "wrk_TEST")
+	client.baseURL = server.URL
+	status, err := client.FetchGoStatus(context.Background())
+	if err != nil {
+		t.Fatalf("FetchGoStatus: %v", err)
+	}
+	if status.Access == nil {
+		t.Fatal("access is nil")
+	}
+	if got := status.Access.Meters.FiveHour.UsedMicroCents; got != 97608179 {
+		t.Fatalf("fiveHour used = %d, want 97608179", got)
+	}
+
+	snap := core.NewUsageSnapshot("opencode", "opencode")
+	applyGoStatus(&snap, status)
+	for key, want := range map[string]float64{
+		"rolling_usage":     8.133,
+		"weekly_usage":      10.714,
+		"monthly_usage_pct": 70.754,
+	} {
+		m, ok := snap.Metrics[key]
+		if !ok || m.Used == nil {
+			t.Fatalf("%s missing", key)
+		}
+		if diff := *m.Used - want; diff > 0.01 || diff < -0.01 {
+			t.Errorf("%s = %.3f, want %.3f", key, *m.Used, want)
+		}
+	}
+	if _, ok := snap.Resets["rolling_usage_reset"]; !ok {
+		t.Error("rolling_usage_reset missing")
 	}
 }

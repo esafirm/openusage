@@ -10,12 +10,17 @@ import (
 	"github.com/janekbaraniewski/openusage/internal/pricing"
 )
 
-// TestMain installs a stub priceLookup so the existing test suite remains
-// deterministic and offline. Individual tests that exercise the resolver
-// path override priceLookup locally and restore it via t.Cleanup.
+// TestMain installs stubs so the existing test suite remains deterministic
+// and offline. Individual tests that exercise a resolver path override the
+// stub locally and restore it via t.Cleanup.
 func TestMain(m *testing.M) {
 	priceLookup = func(_ context.Context, _ string, _ int) (*pricing.Price, error) {
 		return nil, errors.New("pricing disabled in tests")
+	}
+	// Keep credentials tests hermetic: without this stub a macOS developer
+	// machine with a real Claude Code keychain item would read the live token.
+	claudeKeychainTokenReader = func() (string, error) {
+		return "", errors.New("keychain disabled in tests")
 	}
 	os.Exit(m.Run())
 }

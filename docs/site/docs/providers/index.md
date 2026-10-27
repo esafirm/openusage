@@ -6,7 +6,7 @@ sidebar_label: Providers
 
 # Providers
 
-This build supports five providers. Most are auto-detected on first run. Each
+This build supports six providers. Most are auto-detected on first run. Each
 tile on the dashboard maps to one provider page below.
 
 ## Coding agents
@@ -15,6 +15,10 @@ tile on the dashboard maps to one provider page below.
   <a href="./claude-code/">
     <strong>Claude Code</strong>
     <span>Sessions, billing blocks, burn rate, per-model tokens</span>
+  </a>
+  <a href="./codex/">
+    <strong>Codex CLI</strong>
+    <span>ChatGPT/Codex plan usage, 5h/7d rate limits, session tokens</span>
   </a>
   <a href="./opencode/">
     <strong>OpenCode</strong>

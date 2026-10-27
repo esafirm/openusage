@@ -16,3 +16,20 @@ func FormatTokenCountF(value float64) string {
 		return fmt.Sprintf("%.0f", value)
 	}
 }
+
+// FormatTokenCount returns a human-readable string for an integer token count.
+func FormatTokenCount(value int) string {
+	return FormatTokenCountF(float64(value))
+}
+
+// Truncate shortens s to maxLen runes, appending "…" if truncated.
+func Truncate(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	if maxLen <= 1 {
+		return "…"
+	}
+	return string(runes[:maxLen-1]) + "…"
+}

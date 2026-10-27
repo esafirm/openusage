@@ -6,6 +6,7 @@ import (
 	"github.com/janekbaraniewski/openusage/internal/core"
 	"github.com/janekbaraniewski/openusage/internal/providers/antigravity"
 	"github.com/janekbaraniewski/openusage/internal/providers/claude_code"
+	"github.com/janekbaraniewski/openusage/internal/providers/codex"
 	"github.com/janekbaraniewski/openusage/internal/providers/copilot"
 	"github.com/janekbaraniewski/openusage/internal/providers/openai"
 	"github.com/janekbaraniewski/openusage/internal/providers/opencode"
@@ -14,15 +15,16 @@ import (
 
 // AllProviders returns the provider set supported by this build.
 //
-// The set is intentionally small: OpenCode, Claude Code, Antigravity, OpenAI,
-// and Copilot. Adding a provider here also requires a matching detector in
-// internal/detect.
+// The set is intentionally small: OpenCode, Claude Code, Codex, Antigravity,
+// OpenAI, and Copilot. Adding a provider here also requires a matching
+// detector in internal/detect.
 func AllProviders() []core.UsageProvider {
 	return []core.UsageProvider{
 		openai.New(),
 		opencode.New(),
 		antigravity.New(),
 		claude_code.New(),
+		codex.New(),
 		copilot.New(),
 	}
 }

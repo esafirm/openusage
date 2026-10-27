@@ -148,9 +148,10 @@ Family is matched by substring on the model name (e.g. `claude-3-5-sonnet-…` �
 
 ### 5h / 7d utilization gauge (`usage_five_hour`, `usage_seven_day`)
 
-- Source (macOS): the Claude **desktop app's** session cookies, decrypted from the macOS keychain, are used to call the usage API above.
-- Source (fallback, all platforms): when desktop-app cookie extraction is unavailable — anywhere but macOS, or when the desktop app isn't installed — the provider reads the Claude Code CLI's own OAuth access token from `~/.claude/.credentials.json` and calls `GET https://api.anthropic.com/api/oauth/usage`. This needs no organization UUID (the token is account-scoped) and no desktop app, so the 5h/7d gauges work on Linux and Windows. An expired token is skipped (Claude Code refreshes it on next use).
-- Transform: the response (same `five_hour` / `seven_day` utilization shape from either source) populates the gauges and warms the shared 5h cache read by the statusline and tmux segments.
+- Source: the Claude Code CLI's own OAuth access token, read from the macOS login keychain (`Claude Code-credentials`) or, on older installs and non-macOS platforms, from `~/.claude/.credentials.json`. The provider calls `GET https://api.anthropic.com/api/oauth/usage`, which is account-scoped and needs no desktop app or organization UUID. An expired token is skipped (Claude Code refreshes it on next use).
+- On macOS the keychain is checked first because current Claude Code releases keep the refreshed token there and stop updating the credentials file. When the keychain entry is missing or unreadable, the file is used as a fallback.
+- The Claude **desktop app's** session-cookie source is only probed by interactive setup commands (or when `OPENUSAGE_CLAUDE_DESKTOP_COOKIES=1` is set); the background daemon never touches the keychain for cookie decryption.
+- Transform: the response (`five_hour` / `seven_day` utilization) populates the gauges and warms the shared 5h cache read by the statusline and tmux segments.
 
 ### Auth status
 
@@ -172,13 +173,14 @@ Family is matched by substring on the model name (e.g. `claude-3-5-sonnet-…` �
 - `~/.claude/stats-cache.json` (or `stats.json`, with legacy fallbacks) — daily activity rollups
 - `~/.claude.json` — OAuth state, subscription metadata, organization UUID, skill usage
 - `~/.claude/settings.json` — active model, `alwaysThinkingEnabled` flag
+- macOS login keychain item `Claude Code-credentials` — current OAuth access token (read with the `security` CLI)
 
 On Linux the provider also probes `~/.config/claude/projects/` as a fallback.
 
 ## API endpoints used
 
-- Optional: `GET https://claude.ai/api/organizations/{org_uuid}/usage` — only when browser-session cookies are imported (macOS desktop app). See [Daemon integrations](../daemon/integrations.md).
-- Optional: `GET https://api.anthropic.com/api/oauth/usage` — off-macOS fallback for the 5h/7d utilization gauge, authenticated with the Claude Code OAuth token from `~/.claude/.credentials.json`.
+- Optional: `GET https://api.anthropic.com/api/oauth/usage` — 5h/7d utilization gauge, authenticated with the Claude Code OAuth token from the macOS keychain or `~/.claude/.credentials.json`.
+- Optional: `GET https://claude.ai/api/organizations/{org_uuid}/usage` — only when browser-session cookies are imported during interactive setup. See [Daemon integrations](../daemon/integrations.md).
 
 ## Caveats
 

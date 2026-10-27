@@ -11,14 +11,18 @@ import (
 	"github.com/janekbaraniewski/openusage/internal/core"
 )
 
-// OpenCode console session (opencode.ai "auth" cookie). The OpenCode Go
-// quota windows (5h / weekly / monthly) and the Zen balance are only exposed
-// through the web console, never to API keys, so the provider needs this
-// cookie to render real usage meters.
+// OpenCode console session (opencode.ai "__Host-console_session" cookie). The
+// OpenCode Go quota windows (5h / weekly / monthly) and the Zen balance are
+// only exposed through the web console, never to API keys, so the provider
+// needs this cookie to render real usage meters.
+//
+// The `__Host-` prefix is the console app's session cookie (see the
+// /console bundle: __Host-console_session). The older `auth` cookie belongs
+// to the marketing site and is not accepted by /console/api.
 const (
 	opencodeConsoleAccountID  = "opencode"
-	opencodeConsoleDomain     = ".opencode.ai"
-	opencodeConsoleCookieName = "auth"
+	opencodeConsoleDomain     = "opencode.ai"
+	opencodeConsoleCookieName = "__Host-console_session"
 
 	// opencodeSessionProbeInterval throttles the browser-store probe while
 	// no session has been imported yet. AutoDetect runs on every daemon

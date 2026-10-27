@@ -30,8 +30,6 @@ const (
 	rpcBillingInfoID = "c83b78a614689c38ebee981f9b39a8b377716db85c1fd7dbab604adc02d3313d"
 )
 
-var workspaceRedirectRE = regexp.MustCompile(`/workspace/([^/?#]+)`)
-
 // ConsoleClient is a minimal SolidStart RPC client for the OpenCode console.
 // Cookie-authed; never writes mutations.
 type ConsoleClient struct {
@@ -148,45 +146,38 @@ func (c *ConsoleClient) applyHeaders(req *http.Request, fnID string) {
 	req.Header.Set("User-Agent", "openusage/console-client")
 }
 
-// DiscoverWorkspaceID resolves the user's last-seen workspace by following the
-// same authenticated redirect the OpenCode console uses for `/auth`.
+// DiscoverWorkspaceID resolves the user's personal workspace through the
+// console's own API. The old /auth redirect now points at /console/login even
+// with a valid console session, so it can't be used for discovery.
 func (c *ConsoleClient) DiscoverWorkspaceID(ctx context.Context) (string, error) {
-	if c.Cookie == "" || c.CookieName == "" {
-		return "", errors.New("console: missing session cookie")
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/auth", nil)
+	body, err := c.getConsoleJSON(ctx, "/console/api/user/workspaces", false)
 	if err != nil {
-		return "", fmt.Errorf("console: auth redirect request: %w", err)
+		return "", err
 	}
-	c.applyHeaders(req, "")
 
-	client := *c.httpClient
-	client.CheckRedirect = func(*http.Request, []*http.Request) error {
-		return http.ErrUseLastResponse
+	var workspaces []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		Role string `json:"role"`
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("console: auth redirect request: %w", err)
+	if err := json.Unmarshal(body, &workspaces); err != nil {
+		return "", fmt.Errorf("console: parsing workspaces: %w", err)
 	}
-	defer resp.Body.Close()
-
-	location := resp.Header.Get("Location")
-	if location == "" {
-		if resp.Request != nil && resp.Request.URL != nil {
-			location = resp.Request.URL.String()
+	if len(workspaces) == 0 {
+		return "", errors.New("console: no workspaces for this session")
+	}
+	for _, ws := range workspaces {
+		if strings.TrimSpace(ws.ID) == "" {
+			continue
+		}
+		if ws.Role == "owner" {
+			return ws.ID, nil
 		}
 	}
-	matches := workspaceRedirectRE.FindStringSubmatch(location)
-	if len(matches) == 2 && strings.TrimSpace(matches[1]) != "" {
-		return matches[1], nil
+	if id := strings.TrimSpace(workspaces[0].ID); id != "" {
+		return id, nil
 	}
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return "", &ConsoleAuthError{StatusCode: resp.StatusCode, Body: "workspace discovery unauthorized"}
-	}
-	if location != "" {
-		return "", fmt.Errorf("console: workspace redirect missing id (%s)", location)
-	}
-	return "", fmt.Errorf("console: workspace redirect missing id (HTTP %d)", resp.StatusCode)
+	return "", errors.New("console: workspace list has no usable id")
 }
 
 // SubscriptionUsage is the parsed shape of a subscription.get response.

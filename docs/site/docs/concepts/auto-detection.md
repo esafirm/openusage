@@ -11,7 +11,7 @@ Detection runs in four phases. Earlier phases win when the same provider/account
 
 ### 1. Tool detectors
 
-Tool-specific local checks for Claude Code, GitHub Copilot, and Antigravity CLI.
+Tool-specific local checks for Claude Code, Codex CLI, GitHub Copilot, and Antigravity CLI.
 
 ### 2. Environment variables (API platforms)
 
@@ -31,6 +31,7 @@ When an env var isn't set in the running process — for example because OpenUsa
 | Source | Where | What's adopted |
 |---|---|---|
 | Shell rc files | `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.bash_profile`, `~/.bashrc`, `~/.profile`, `~/.config/fish/config.fish`, plus modular `~/.zshrc.d/*.zsh`, `~/.bashrc.d/*.sh`, `~/.config/fish/conf.d/*.fish` | `export VAR=...`, plain `VAR=...`, and fish `set -gx VAR ...` lines whose name matches one of the API key envs above. Lines that contain shell substitutions (`$VAR`, `$(...)`, backticks) are skipped — we never invoke a shell. |
+| Codex CLI | `~/.codex/sessions/` and `~/.codex/auth.json` | Local session logs and the Codex CLI login. Registers the `codex-cli` account; no key is copied. |
 | OpenCode | `~/.local/share/opencode/auth.json` | API-key entries for OpenCode (Zen) and OpenCode Go. OAuth-typed entries are recognised but not adopted. |
 
 A discovered key always sets the account's `credential_source` runtime hint with a precise locator (`shell_rc:/path`, `opencode_auth_json`) so you can audit where a credential came from with `openusage detect`.

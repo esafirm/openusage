@@ -58,6 +58,20 @@ func TestResolveHideCosts_AutoPolicy(t *testing.T) {
 		{"claude_code nil raw shows",
 			UsageSnapshot{ProviderID: "claude_code"}, false},
 
+		// codex
+		{"codex plus hides",
+			UsageSnapshot{ProviderID: "codex", Raw: map[string]string{"plan_type": "plus"}}, true},
+		{"codex pro hides",
+			UsageSnapshot{ProviderID: "codex", Raw: map[string]string{"plan_type": "pro"}}, true},
+		{"codex team hides",
+			UsageSnapshot{ProviderID: "codex", Raw: map[string]string{"plan_type": "team"}}, true},
+		{"codex enterprise hides",
+			UsageSnapshot{ProviderID: "codex", Raw: map[string]string{"plan_type": "enterprise"}}, true},
+		{"codex free shows",
+			UsageSnapshot{ProviderID: "codex", Raw: map[string]string{"plan_type": "free"}}, false},
+		{"codex plus hides from attributes",
+			UsageSnapshot{ProviderID: "codex", Attributes: map[string]string{"plan_type": "plus"}}, true},
+
 		// copilot
 		{"copilot individual hides",
 			UsageSnapshot{ProviderID: "copilot", Raw: map[string]string{"copilot_plan": "individual"}}, true},

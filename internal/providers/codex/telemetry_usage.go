@@ -1,0 +1,1035 @@
+package codex
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/janekbaraniewski/openusage/internal/core"
+	"github.com/janekbaraniewski/openusage/internal/providers/shared"
+)
+
+const (
+	codexTelemetryProviderID    = "codex"
+	codexTelemetryUpstreamModel = "openai"
+)
+
+func (p *Provider) System() string { return p.ID() }
+
+func (p *Provider) DefaultCollectOptions() shared.TelemetryCollectOptions {
+	return shared.TelemetryCollectOptions{
+		Paths: map[string]string{
+			"sessions_dir": DefaultTelemetrySessionsDir(),
+		},
+	}
+}
+
+func (p *Provider) Collect(ctx context.Context, opts shared.TelemetryCollectOptions) ([]shared.TelemetryEvent, error) {
+	sessionsDir := shared.ExpandHome(opts.Path("sessions_dir", DefaultTelemetrySessionsDir()))
+	accountID := strings.TrimSpace(opts.Path("account_id", "codex-cli"))
+	baselineExisting := codexBaselineExistingEnabled(opts)
+	baselineRecentWindow := codexBaselineRecentWindow(opts)
+	baselineCutoff := time.Now().Add(-baselineRecentWindow)
+
+	fileInfos, err := shared.CollectFilesWithStat([]string{sessionsDir}, map[string]bool{".jsonl": true})
+	if err != nil {
+		return nil, fmt.Errorf("collect codex telemetry files: %w", err)
+	}
+
+	p.telemetryCacheMu.Lock()
+	defer p.telemetryCacheMu.Unlock()
+	if p.telemetryCache == nil {
+		p.telemetryCache = make(map[string]*telemetryCacheEntry)
+	}
+	baselineInitialFiles := baselineExisting && !p.telemetryBaselineInitialized
+	p.telemetryBaselineInitialized = true
+	if len(fileInfos) == 0 {
+		return nil, nil
+	}
+
+	var out []shared.TelemetryEvent
+	pendingCache := make(map[string]*telemetryCacheEntry)
+	for path, info := range fileInfos {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if entry, ok := p.telemetryCache[path]; ok {
+			// Codex session logs are append-only. Some filesystem activity can
+			// update mtime without adding bytes, which must not trigger a full
+			// historical reparse.
+			if entry.size == info.Size() {
+				entry.modTime = info.ModTime()
+				continue
+			}
+			// The file may grow after CollectFilesWithStat snapshots its size but
+			// before the parser reaches EOF. In that race byteOffset can be ahead
+			// of the cached size. When a later stat catches up exactly, there are
+			// no unread bytes; falling through would replay the whole session.
+			if info.Size() == entry.byteOffset {
+				entry.modTime = info.ModTime()
+				entry.size = info.Size()
+				continue
+			}
+			if info.Size() > entry.byteOffset && entry.byteOffset >= 0 {
+				nextState := entry.state
+				resumeOffset := entry.byteOffset
+				resumeLineNumber := entry.lineNumber
+				if nextState == nil && resumeOffset > 0 {
+					var primeErr error
+					nextState, resumeOffset, resumeLineNumber, primeErr = primeTelemetryParserState(path, resumeOffset)
+					if primeErr != nil {
+						continue
+					}
+				}
+				if nextState == nil {
+					nextState = newTelemetryParserState(path)
+				} else {
+					nextState = nextState.clone()
+				}
+				events, nextOffset, nextLineNumber, err := parseTelemetrySessionFileFrom(path, resumeOffset, resumeLineNumber, nextState)
+				if err == nil && nextOffset >= entry.byteOffset {
+					if accountID != "" {
+						for i := range events {
+							events[i].AccountID = accountID
+						}
+					}
+					pendingCache[path] = &telemetryCacheEntry{
+						modTime:    info.ModTime(),
+						size:       max(info.Size(), nextOffset),
+						byteOffset: nextOffset,
+						lineNumber: nextLineNumber,
+						state:      nextState,
+					}
+					out = append(out, events...)
+					continue
+				}
+			}
+		} else if baselineInitialFiles && (baselineRecentWindow == 0 || info.ModTime().Before(baselineCutoff)) {
+			resumeOffset, err := baselineTelemetryResumeOffset(path, info.Size())
+			if err != nil {
+				continue
+			}
+			p.telemetryCache[path] = &telemetryCacheEntry{
+				modTime:    info.ModTime(),
+				size:       info.Size(),
+				byteOffset: resumeOffset,
+			}
+			continue
+		}
+
+		state := newTelemetryParserState(path)
+		events, nextOffset, nextLineNumber, err := parseTelemetrySessionFileFrom(path, 0, 0, state)
+		if err != nil {
+			continue
+		}
+		if accountID != "" {
+			for i := range events {
+				events[i].AccountID = accountID
+			}
+		}
+		pendingCache[path] = &telemetryCacheEntry{
+			modTime:    info.ModTime(),
+			size:       max(info.Size(), nextOffset),
+			byteOffset: nextOffset,
+			lineNumber: nextLineNumber,
+			state:      state,
+		}
+		out = append(out, events...)
+	}
+	for path, entry := range pendingCache {
+		p.telemetryCache[path] = entry
+	}
+	return out, nil
+}
+
+// baselineTelemetryResumeOffset finds a safe boundary for a file that already
+// existed when collection started. Complete history is skipped without
+// eagerly reconstructing parser state for every archived session. If the last
+// JSONL record is being written, its start is retained so it can be parsed once
+// the writer completes it.
+func baselineTelemetryResumeOffset(path string, size int64) (int64, error) {
+	if size <= 0 {
+		return 0, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	last := []byte{0}
+	if _, err := f.ReadAt(last, size-1); err != nil {
+		return 0, err
+	}
+	if last[0] == '\n' {
+		return size, nil
+	}
+
+	window := int64(4096)
+	for {
+		if window > size {
+			window = size
+		}
+		start := size - window
+		buf := make([]byte, window)
+		if _, err := f.ReadAt(buf, start); err != nil && err != io.EOF {
+			return 0, err
+		}
+		if idx := bytes.LastIndexByte(buf, '\n'); idx >= 0 {
+			lastLineStart := start + int64(idx) + 1
+			if json.Valid(bytes.TrimSpace(buf[idx+1:])) {
+				return size, nil
+			}
+			return lastLineStart, nil
+		}
+		if start == 0 {
+			if json.Valid(bytes.TrimSpace(buf)) {
+				return size, nil
+			}
+			return 0, nil
+		}
+		if window >= int64(maxScannerBufferSize) {
+			return size, nil
+		}
+		window *= 2
+		if window > int64(maxScannerBufferSize) {
+			window = int64(maxScannerBufferSize)
+		}
+	}
+}
+
+func codexBaselineExistingEnabled(opts shared.TelemetryCollectOptions) bool {
+	value := strings.ToLower(strings.TrimSpace(opts.Path("baseline_existing", os.Getenv("OPENUSAGE_CODEX_BASELINE_EXISTING"))))
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func codexBaselineRecentWindow(opts shared.TelemetryCollectOptions) time.Duration {
+	value := strings.TrimSpace(opts.Path("baseline_recent_window", os.Getenv("OPENUSAGE_CODEX_BASELINE_RECENT_WINDOW")))
+	if value == "" {
+		return 10 * time.Minute
+	}
+	d, err := time.ParseDuration(value)
+	if err != nil || d < 0 {
+		return 10 * time.Minute
+	}
+	return d
+}
+
+const (
+	codexTelemetryPrimeInitialTailBytes int64 = 512 * 1024
+	codexTelemetryPrimeMaxTailBytes     int64 = 8 * 1024 * 1024
+)
+
+// primeTelemetryParserState establishes the resume offset and cumulative token
+// state without materializing telemetry events for history that is already in
+// the local store. Only the first record and a bounded tail are inspected.
+func primeTelemetryParserState(path string, size int64) (*telemetryParserState, int64, int, error) {
+	state := newTelemetryParserState(path)
+
+	firstFile, err := os.Open(path)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	firstReader := bufio.NewReaderSize(io.LimitReader(firstFile, size), 512*1024)
+	firstLine, readErr := firstReader.ReadBytes('\n')
+	_ = firstFile.Close()
+	if readErr != nil && readErr != io.EOF {
+		return nil, 0, 0, readErr
+	}
+	if record, ok := decodeSessionLine(firstLine, 1); ok && record.SessionMeta != nil {
+		applyTelemetrySessionMeta(state, record.SessionMeta)
+	}
+
+	// Search backwards and decode only the newest relevant records. Tool output
+	// can put several megabytes between token_count events; decoding every JSON
+	// record in that tail caused a full-core spike when an active session first
+	// grew after daemon startup.
+	if err := primeTelemetryTailState(path, size, state); err != nil {
+		return nil, 0, 0, err
+	}
+
+	// Historical line numbers are deliberately approximated by the byte offset.
+	// This keeps fallback IDs monotonic without counting every line in history.
+	return state, size, int(size), nil
+}
+
+func primeTelemetryTailState(path string, size int64, state *telemetryParserState) error {
+	if size <= 0 || state == nil {
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	var latestToken *tokenInfo
+	var latestTurn *turnContextPayload
+	for tailBytes := codexTelemetryPrimeInitialTailBytes; ; tailBytes *= 2 {
+		if tailBytes > size {
+			tailBytes = size
+		}
+		if tailBytes > codexTelemetryPrimeMaxTailBytes {
+			tailBytes = codexTelemetryPrimeMaxTailBytes
+		}
+		start := size - tailBytes
+		buf := make([]byte, tailBytes)
+		if _, err := f.ReadAt(buf, start); err != nil && err != io.EOF {
+			return err
+		}
+		if start > 0 {
+			if firstNewline := bytes.IndexByte(buf, '\n'); firstNewline >= 0 {
+				buf = buf[firstNewline+1:]
+			} else {
+				buf = nil
+			}
+		}
+
+		lines := bytes.Split(buf, []byte{'\n'})
+		for i := len(lines) - 1; i >= 0 && (latestToken == nil || latestTurn == nil); i-- {
+			line := lines[i]
+			if len(line) == 0 {
+				continue
+			}
+			if latestToken == nil && bytes.Contains(line, []byte(`"type":"token_count"`)) {
+				if record, ok := decodeSessionLine(line, int(start)); ok && record.EventPayload != nil && record.EventPayload.Info != nil {
+					info := *record.EventPayload.Info
+					latestToken = &info
+				}
+			}
+			if latestTurn == nil && bytes.Contains(line, []byte(`"type":"turn_context"`)) {
+				if record, ok := decodeSessionLine(line, int(start)); ok && record.TurnContext != nil {
+					turn := *record.TurnContext
+					latestTurn = &turn
+				}
+			}
+		}
+
+		if (latestToken != nil && latestTurn != nil) || start == 0 || tailBytes == codexTelemetryPrimeMaxTailBytes {
+			break
+		}
+	}
+
+	if latestTurn != nil {
+		applyTelemetryTurnContext(state, latestTurn)
+	}
+	if latestToken != nil {
+		state.previous = latestToken.TotalTokenUsage
+		state.hasPrevious = true
+		if state.previous.TotalTokens > 0 {
+			state.turnIndex++
+		}
+	}
+	return nil
+}
+
+func (p *Provider) ParseHookPayload(raw []byte, opts shared.TelemetryCollectOptions) ([]shared.TelemetryEvent, error) {
+	return ParseTelemetryNotifyPayload(raw, opts)
+}
+
+// DefaultTelemetrySessionsDir returns the default Codex sessions directory.
+func DefaultTelemetrySessionsDir() string {
+	home, _ := os.UserHomeDir()
+	if strings.TrimSpace(home) == "" {
+		return ""
+	}
+	return filepath.Join(home, defaultCodexConfigDir, "sessions")
+}
+
+// ParseTelemetrySessionFile parses a Codex session JSONL file into normalized telemetry events.
+func ParseTelemetrySessionFile(path string) ([]shared.TelemetryEvent, error) {
+	state := newTelemetryParserState(path)
+	events, _, _, err := parseTelemetrySessionFileFrom(path, 0, 0, state)
+	return events, err
+}
+
+type telemetryParserState struct {
+	sessionID          string
+	model              string
+	upstreamProviderID string
+	workspaceID        string
+	currentTurnID      string
+	clientName         string
+	clientSource       string
+	clientOriginator   string
+	previous           tokenUsage
+	hasPrevious        bool
+	turnIndex          int
+}
+
+func newTelemetryParserState(path string) *telemetryParserState {
+	return &telemetryParserState{
+		sessionID:          strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)),
+		upstreamProviderID: codexTelemetryUpstreamModel,
+		clientName:         "Other",
+	}
+}
+
+func (s *telemetryParserState) clone() *telemetryParserState {
+	if s == nil {
+		return nil
+	}
+	cloned := *s
+	return &cloned
+}
+
+func applyTelemetrySessionMeta(state *telemetryParserState, meta *sessionMetaPayload) {
+	if state == nil || meta == nil {
+		return
+	}
+	if sid := core.FirstNonEmpty(meta.SessionID, meta.ID); sid != "" {
+		state.sessionID = sid
+	}
+	// ProvenanceModel is the last-resort source: Codex CLI 0.147.0 dropped the
+	// explicit model from the session header, so without it every turn falls
+	// into the "unknown" bucket. The explicit fields still win.
+	if m := core.FirstNonEmpty(meta.Model, meta.ModelID, meta.ProvenanceModel()); strings.TrimSpace(m) != "" {
+		state.model = strings.TrimSpace(m)
+	}
+	if strings.TrimSpace(meta.ModelProvider) != "" {
+		state.upstreamProviderID = strings.TrimSpace(meta.ModelProvider)
+	}
+	if ws := shared.SanitizeWorkspace(meta.CWD); ws != "" {
+		state.workspaceID = ws
+	}
+	state.clientSource = strings.TrimSpace(meta.Source)
+	state.clientOriginator = strings.TrimSpace(meta.Originator)
+	state.clientName = classifyClient(state.clientSource, state.clientOriginator)
+}
+
+func applyTelemetryTurnContext(state *telemetryParserState, turn *turnContextPayload) {
+	if state == nil || turn == nil {
+		return
+	}
+	if m := core.FirstNonEmpty(turn.Model, turn.ModelID); strings.TrimSpace(m) != "" {
+		state.model = strings.TrimSpace(m)
+	}
+	if strings.TrimSpace(turn.TurnID) != "" {
+		state.currentTurnID = strings.TrimSpace(turn.TurnID)
+	}
+}
+
+func applyTelemetryThreadSettings(state *telemetryParserState, payload *eventPayload) {
+	if state == nil || payload == nil || payload.ThreadSettings == nil {
+		return
+	}
+	if m := core.FirstNonEmpty(payload.ThreadSettings.Model, payload.ThreadSettings.ModelID); strings.TrimSpace(m) != "" {
+		state.model = strings.TrimSpace(m)
+	}
+}
+
+func parseTelemetrySessionFileFrom(path string, byteOffset int64, lineNumber int, state *telemetryParserState) ([]shared.TelemetryEvent, int64, int, error) {
+	if state == nil {
+		state = newTelemetryParserState(path)
+	}
+	toolByCallID := make(map[string]int)
+
+	var out []shared.TelemetryEvent
+	var pending []*shared.TelemetryEvent
+	flushPending := func(realModel string) {
+		if len(pending) == 0 || strings.TrimSpace(realModel) == "" {
+			return
+		}
+		for _, ev := range pending {
+			ev.ModelRaw = strings.TrimSpace(realModel)
+			out = append(out, *ev)
+		}
+		pending = nil
+	}
+	nextOffset, nextLineNumber, err := walkSessionFileFrom(path, byteOffset, lineNumber, func(record sessionLine) error {
+		switch {
+		case record.SessionMeta != nil:
+			applyTelemetrySessionMeta(state, record.SessionMeta)
+			if strings.TrimSpace(state.model) != "" && len(pending) > 0 {
+				flushPending(state.model)
+			}
+		case record.TurnContext != nil:
+			applyTelemetryTurnContext(state, record.TurnContext)
+			if strings.TrimSpace(state.model) != "" && len(pending) > 0 {
+				flushPending(state.model)
+			}
+		case record.EventPayload != nil:
+			payload := record.EventPayload
+			if payload.Type == "thread_settings_applied" {
+				applyTelemetryThreadSettings(state, payload)
+				if strings.TrimSpace(state.model) != "" && len(pending) > 0 {
+					flushPending(state.model)
+				}
+				return nil
+			}
+			if payload.Type != "token_count" || payload.Info == nil {
+				return nil
+			}
+			total := payload.Info.TotalTokenUsage
+			delta := total
+			if state.hasPrevious {
+				delta = usageDelta(total, state.previous)
+				if !validUsageDelta(delta) {
+					delta = total
+				}
+			}
+			state.previous = total
+			state.hasPrevious = true
+
+			if delta.TotalTokens <= 0 {
+				return nil
+			}
+			state.turnIndex++
+
+			occurredAt := time.Now().UTC()
+			if ts, err := shared.ParseTimestampString(record.Timestamp); err == nil {
+				occurredAt = ts
+			}
+
+			turnID := fmt.Sprintf("%s:%d", state.sessionID, state.turnIndex)
+			if strings.TrimSpace(state.currentTurnID) != "" {
+				turnID = strings.TrimSpace(state.currentTurnID)
+			}
+			if strings.TrimSpace(payload.RequestID) != "" {
+				turnID = strings.TrimSpace(payload.RequestID)
+			}
+			messageID := strings.TrimSpace(payload.MessageID)
+			if messageID == "" {
+				messageID = turnID
+			}
+
+			// A token_count event may name its own model, which overrides the
+			// session/turn default for this turn only -- so it is derived here
+			// rather than stored on the parser state.
+			eventModel := state.model
+			if m := core.FirstNonEmpty(payload.Model, payload.ModelID); strings.TrimSpace(m) != "" {
+				eventModel = strings.TrimSpace(m)
+			}
+			if strings.TrimSpace(eventModel) == "" {
+				// Buffer early unknowns (first token_counts before any
+				// turn_context/thread_settings) and flush to first real model
+				ev := shared.TelemetryEvent{
+					SchemaVersion: "codex_session_v1",
+					Channel:       shared.TelemetryChannelJSONL,
+					OccurredAt:    occurredAt,
+					AccountID:     "codex",
+					WorkspaceID:   state.workspaceID,
+					SessionID:     state.sessionID,
+					TurnID:        turnID,
+					MessageID:     messageID,
+					ProviderID:    codexTelemetryProviderID,
+					AgentName:     "codex",
+					EventType:     shared.TelemetryEventTypeMessageUsage,
+					ModelRaw:      eventModel,
+					TokenUsage: core.TokenUsage{
+						InputTokens:     core.Int64Ptr(int64(delta.InputTokens)),
+						OutputTokens:    core.Int64Ptr(int64(delta.OutputTokens)),
+						ReasoningTokens: core.Int64Ptr(int64(delta.ReasoningOutputTokens)),
+						CacheReadTokens: core.Int64Ptr(int64(delta.CachedInputTokens)),
+						TotalTokens:     core.Int64Ptr(int64(delta.TotalTokens)),
+					},
+					Status: shared.TelemetryStatusOK,
+					Payload: map[string]any{
+						"source_file":       path,
+						"line":              record.LineNumber,
+						"upstream_provider": state.upstreamProviderID,
+						"client":            state.clientName,
+						"client_source":     state.clientSource,
+						"client_originator": state.clientOriginator,
+					},
+				}
+				pending = append(pending, &ev)
+				return nil
+			}
+			if len(pending) > 0 {
+				flushPending(eventModel)
+			}
+
+			out = append(out, shared.TelemetryEvent{
+				SchemaVersion: "codex_session_v1",
+				Channel:       shared.TelemetryChannelJSONL,
+				OccurredAt:    occurredAt,
+				AccountID:     "codex",
+				WorkspaceID:   state.workspaceID,
+				SessionID:     state.sessionID,
+				TurnID:        turnID,
+				MessageID:     messageID,
+				ProviderID:    codexTelemetryProviderID,
+				AgentName:     "codex",
+				EventType:     shared.TelemetryEventTypeMessageUsage,
+				ModelRaw:      eventModel,
+				TokenUsage: core.TokenUsage{
+					InputTokens:     core.Int64Ptr(int64(delta.InputTokens)),
+					OutputTokens:    core.Int64Ptr(int64(delta.OutputTokens)),
+					ReasoningTokens: core.Int64Ptr(int64(delta.ReasoningOutputTokens)),
+					CacheReadTokens: core.Int64Ptr(int64(delta.CachedInputTokens)),
+					TotalTokens:     core.Int64Ptr(int64(delta.TotalTokens)),
+				},
+				Status: shared.TelemetryStatusOK,
+				Payload: map[string]any{
+					"source_file":       path,
+					"line":              record.LineNumber,
+					"upstream_provider": state.upstreamProviderID,
+					"client":            state.clientName,
+					"client_source":     state.clientSource,
+					"client_originator": state.clientOriginator,
+				},
+			})
+		case record.ResponseItem != nil:
+			item := record.ResponseItem
+			occurredAt := time.Now().UTC()
+			if ts, err := shared.ParseTimestampString(record.Timestamp); err == nil {
+				occurredAt = ts
+			}
+
+			switch item.Type {
+			case "function_call", "custom_tool_call", "web_search_call":
+				toolName := normalizeToolName(item.Name)
+				if item.Type == "web_search_call" {
+					toolName = "web_search"
+				}
+				if strings.TrimSpace(toolName) == "" {
+					toolName = "unknown"
+				}
+
+				turnID := fmt.Sprintf("%s:tool:%d", state.sessionID, record.LineNumber)
+				if strings.TrimSpace(state.currentTurnID) != "" {
+					turnID = strings.TrimSpace(state.currentTurnID)
+				}
+				callID := strings.TrimSpace(item.CallID)
+				messageID := core.FirstNonEmpty(callID, turnID, fmt.Sprintf("%s:%d", state.sessionID, record.LineNumber))
+				eventPayload := codexBuildToolPayload(path, record.LineNumber, *item)
+				if strings.TrimSpace(state.upstreamProviderID) != "" {
+					eventPayload["upstream_provider"] = strings.TrimSpace(state.upstreamProviderID)
+				}
+				eventPayload["client"] = state.clientName
+				if state.clientSource != "" {
+					eventPayload["client_source"] = state.clientSource
+				}
+				if state.clientOriginator != "" {
+					eventPayload["client_originator"] = state.clientOriginator
+				}
+
+				out = append(out, shared.TelemetryEvent{
+					SchemaVersion: "codex_session_v1",
+					Channel:       shared.TelemetryChannelJSONL,
+					OccurredAt:    occurredAt,
+					AccountID:     "codex",
+					WorkspaceID:   state.workspaceID,
+					SessionID:     state.sessionID,
+					TurnID:        turnID,
+					MessageID:     messageID,
+					ToolCallID:    callID,
+					ProviderID:    codexTelemetryProviderID,
+					AgentName:     "codex",
+					EventType:     shared.TelemetryEventTypeToolUsage,
+					ModelRaw:      state.model,
+					TokenUsage: core.TokenUsage{
+						Requests: core.Int64Ptr(1),
+					},
+					ToolName: toolName,
+					Status:   shared.TelemetryStatusOK,
+					Payload:  eventPayload,
+				})
+				if callID != "" {
+					toolByCallID[callID] = len(out) - 1
+				}
+			case "function_call_output", "custom_tool_call_output":
+				callID := strings.TrimSpace(item.CallID)
+				idx, ok := toolByCallID[callID]
+				if !ok || idx < 0 || idx >= len(out) {
+					return nil
+				}
+				switch inferToolCallOutcome(item.Output) {
+				case 2:
+					out[idx].Status = shared.TelemetryStatusError
+				case 3:
+					out[idx].Status = shared.TelemetryStatusAborted
+				default:
+					out[idx].Status = shared.TelemetryStatusOK
+				}
+			}
+		}
+		return nil
+	})
+	if len(pending) > 0 {
+		for _, ev := range pending {
+			if strings.TrimSpace(ev.ModelRaw) == "" {
+				ev.ModelRaw = "unknown"
+			}
+			out = append(out, *ev)
+		}
+	}
+	if err != nil {
+		return out, nextOffset, nextLineNumber, err
+	}
+	return out, nextOffset, nextLineNumber, nil
+}
+
+// ParseTelemetryNotifyPayload parses Codex notify hook payloads.
+func ParseTelemetryNotifyPayload(raw []byte, opts shared.TelemetryCollectOptions) ([]shared.TelemetryEvent, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	decoder := json.NewDecoder(strings.NewReader(trimmed))
+	decoder.UseNumber()
+	var root map[string]any
+	if err := decoder.Decode(&root); err != nil {
+		return nil, fmt.Errorf("decode codex notify payload: %w", err)
+	}
+
+	occurredAt := time.Now().UTC()
+	if ts := shared.FirstPathNumber(root,
+		[]string{"timestamp"},
+		[]string{"occurred_at"},
+		[]string{"time"},
+	); ts != nil {
+		occurredAt = shared.UnixAuto(int64(*ts))
+	} else if rawTs := shared.FirstPathString(root, []string{"timestamp"}, []string{"occurred_at"}, []string{"time"}); rawTs != "" {
+		if parsed, ok := shared.ParseFlexibleTimestamp(rawTs); ok {
+			occurredAt = shared.UnixAuto(parsed)
+		}
+	}
+
+	sessionID := shared.FirstPathString(root,
+		[]string{"session_id"},
+		[]string{"sessionID"},
+		[]string{"session", "id"},
+	)
+	turnID := shared.FirstPathString(root,
+		[]string{"turn_id"},
+		[]string{"turnID"},
+		[]string{"request_id"},
+		[]string{"requestID"},
+	)
+	messageID := shared.FirstPathString(root,
+		[]string{"message_id"},
+		[]string{"messageID"},
+		[]string{"last_assistant_message", "id"},
+	)
+	upstreamProviderID := core.FirstNonEmpty(
+		shared.FirstPathString(root, []string{"provider_id"}, []string{"providerID"}, []string{"provider"}),
+		codexTelemetryUpstreamModel,
+	)
+	modelRaw := shared.FirstPathString(root,
+		[]string{"model"},
+		[]string{"model_id"},
+		[]string{"modelID"},
+		[]string{"last_assistant_message", "model"},
+	)
+	workspaceID := shared.SanitizeWorkspace(shared.FirstPathString(root,
+		[]string{"cwd"},
+		[]string{"workspace_id"},
+		[]string{"workspaceID"},
+	))
+	accountID := core.FirstNonEmpty(
+		strings.TrimSpace(opts.Path("account_id", "")),
+		shared.FirstPathString(root, []string{"account_id"}, []string{"accountID"}),
+		"codex-cli",
+	)
+	eventStatus := codexHookEventStatus(root)
+	hookSource := strings.TrimSpace(shared.FirstPathString(root, []string{"source"}))
+	hookOriginator := strings.TrimSpace(shared.FirstPathString(root, []string{"originator"}))
+	if hookSource != "" || hookOriginator != "" {
+		root["client"] = classifyClient(hookSource, hookOriginator)
+		if hookSource != "" {
+			root["client_source"] = hookSource
+		}
+		if hookOriginator != "" {
+			root["client_originator"] = hookOriginator
+		}
+	}
+	if strings.TrimSpace(upstreamProviderID) != "" {
+		root["upstream_provider"] = strings.TrimSpace(upstreamProviderID)
+	}
+
+	out := make([]shared.TelemetryEvent, 0, 2)
+
+	if toolName, toolCallID, hasTool := codexExtractHookTool(root); hasTool {
+		if paths := shared.ExtractFilePathsFromPayload(root); len(paths) > 0 {
+			root["file"] = paths[0]
+		}
+		out = append(out, shared.TelemetryEvent{
+			SchemaVersion: "codex_notify_v1",
+			Channel:       shared.TelemetryChannelHook,
+			OccurredAt:    occurredAt,
+			AccountID:     accountID,
+			WorkspaceID:   workspaceID,
+			SessionID:     sessionID,
+			TurnID:        turnID,
+			MessageID:     messageID,
+			ToolCallID:    toolCallID,
+			ProviderID:    codexTelemetryProviderID,
+			AgentName:     "codex",
+			EventType:     shared.TelemetryEventTypeToolUsage,
+			ModelRaw:      modelRaw,
+			TokenUsage: core.TokenUsage{
+				Requests: core.Int64Ptr(1),
+			},
+			ToolName: toolName,
+			Status:   eventStatus,
+			Payload:  root,
+		})
+	}
+
+	usage := codexExtractHookUsage(root)
+	if usage.HasTokenData() {
+		out = append(out, shared.TelemetryEvent{
+			SchemaVersion: "codex_notify_v1",
+			Channel:       shared.TelemetryChannelHook,
+			OccurredAt:    occurredAt,
+			AccountID:     accountID,
+			WorkspaceID:   workspaceID,
+			SessionID:     sessionID,
+			TurnID:        turnID,
+			MessageID:     messageID,
+			ProviderID:    codexTelemetryProviderID,
+			AgentName:     "codex",
+			EventType:     shared.TelemetryEventTypeMessageUsage,
+			ModelRaw:      modelRaw,
+			TokenUsage: core.TokenUsage{
+				InputTokens:      usage.InputTokens,
+				OutputTokens:     usage.OutputTokens,
+				ReasoningTokens:  usage.ReasoningTokens,
+				CacheReadTokens:  usage.CacheReadTokens,
+				CacheWriteTokens: usage.CacheWriteTokens,
+				TotalTokens:      usage.TotalTokens,
+				CostUSD:          usage.CostUSD,
+				Requests:         core.Int64Ptr(1),
+			},
+			Status:  shared.TelemetryStatusOK,
+			Payload: root,
+		})
+	}
+
+	if len(out) > 0 {
+		return out, nil
+	}
+
+	return []shared.TelemetryEvent{{
+		SchemaVersion: "codex_notify_v1",
+		Channel:       shared.TelemetryChannelHook,
+		OccurredAt:    occurredAt,
+		AccountID:     accountID,
+		WorkspaceID:   workspaceID,
+		SessionID:     sessionID,
+		TurnID:        turnID,
+		MessageID:     messageID,
+		ProviderID:    codexTelemetryProviderID,
+		AgentName:     "codex",
+		EventType:     shared.TelemetryEventTypeTurnCompleted,
+		ModelRaw:      modelRaw,
+		TokenUsage: core.TokenUsage{
+			Requests: core.Int64Ptr(1),
+		},
+		Status:  eventStatus,
+		Payload: root,
+	}}, nil
+}
+
+func codexExtractHookUsage(root map[string]any) core.TokenUsage {
+	input := shared.FirstPathNumber(root,
+		[]string{"usage", "input_tokens"},
+		[]string{"usage", "inputTokens"},
+		[]string{"info", "total_token_usage", "input_tokens"},
+		[]string{"last_assistant_message", "usage", "input_tokens"},
+	)
+	output := shared.FirstPathNumber(root,
+		[]string{"usage", "output_tokens"},
+		[]string{"usage", "outputTokens"},
+		[]string{"info", "total_token_usage", "output_tokens"},
+		[]string{"last_assistant_message", "usage", "output_tokens"},
+	)
+	reasoning := shared.FirstPathNumber(root,
+		[]string{"usage", "reasoning_tokens"},
+		[]string{"usage", "reasoning_output_tokens"},
+		[]string{"info", "total_token_usage", "reasoning_output_tokens"},
+		[]string{"last_assistant_message", "usage", "reasoning_tokens"},
+	)
+	cacheRead := shared.FirstPathNumber(root,
+		[]string{"usage", "cache_read_tokens"},
+		[]string{"usage", "cached_input_tokens"},
+		[]string{"info", "total_token_usage", "cached_input_tokens"},
+		[]string{"last_assistant_message", "usage", "cached_input_tokens"},
+	)
+	cacheWrite := shared.FirstPathNumber(root,
+		[]string{"usage", "cache_write_tokens"},
+		[]string{"last_assistant_message", "usage", "cache_write_tokens"},
+	)
+	total := shared.FirstPathNumber(root,
+		[]string{"usage", "total_tokens"},
+		[]string{"usage", "totalTokens"},
+		[]string{"info", "total_token_usage", "total_tokens"},
+		[]string{"last_assistant_message", "usage", "total_tokens"},
+	)
+	cost := shared.FirstPathNumber(root,
+		[]string{"usage", "cost_usd"},
+		[]string{"usage", "costUSD"},
+		[]string{"cost_usd"},
+		[]string{"costUSD"},
+	)
+
+	out := core.TokenUsage{
+		InputTokens:      shared.NumberToInt64Ptr(input),
+		OutputTokens:     shared.NumberToInt64Ptr(output),
+		ReasoningTokens:  shared.NumberToInt64Ptr(reasoning),
+		CacheReadTokens:  shared.NumberToInt64Ptr(cacheRead),
+		CacheWriteTokens: shared.NumberToInt64Ptr(cacheWrite),
+		TotalTokens:      shared.NumberToInt64Ptr(total),
+		CostUSD:          shared.NumberToFloat64Ptr(cost),
+	}
+	out.SumTotalTokens()
+	return out
+}
+
+func codexBuildToolPayload(sourcePath string, lineNumber int, item responseItemPayload) map[string]any {
+	payload := map[string]any{
+		"source_file": sourcePath,
+		"line":        lineNumber,
+	}
+
+	setFirstToolPath := func(value any) {
+		if _, exists := payload["file"]; exists {
+			return
+		}
+		paths := shared.ExtractFilePathsFromPayload(value)
+		if len(paths) > 0 {
+			payload["file"] = paths[0]
+		}
+	}
+
+	if parsed, ok := codexDecodeJSONValue(item.Arguments); ok {
+		setFirstToolPath(parsed)
+		if argsMap, ok := parsed.(map[string]any); ok {
+			if cmd, ok := argsMap["cmd"].(string); ok && strings.TrimSpace(cmd) != "" {
+				payload["command"] = cmd
+				setFirstToolPath(map[string]any{"path": cmd})
+			}
+		}
+	}
+	if parsed, ok := codexDecodeJSONValue(item.Input); ok {
+		setFirstToolPath(parsed)
+	} else if strings.TrimSpace(item.Input) != "" {
+		setFirstToolPath(map[string]any{"path": item.Input})
+	}
+
+	if strings.EqualFold(strings.TrimSpace(item.Name), "apply_patch") && strings.TrimSpace(item.Input) != "" {
+		stats := patchStats{
+			Files:   make(map[string]struct{}),
+			Deleted: make(map[string]struct{}),
+		}
+		accumulatePatchStats(item.Input, &stats, make(map[string]int))
+		if stats.Added > 0 {
+			payload["lines_added"] = stats.Added
+		}
+		if stats.Removed > 0 {
+			payload["lines_removed"] = stats.Removed
+		}
+		if _, exists := payload["file"]; !exists {
+			if first := codexFirstFileFromPatchStats(stats); first != "" {
+				payload["file"] = first
+			}
+		}
+	}
+
+	return payload
+}
+
+func codexDecodeJSONValue(raw any) (any, bool) {
+	var body string
+	switch v := raw.(type) {
+	case string:
+		body = strings.TrimSpace(v)
+	case json.RawMessage:
+		body = strings.TrimSpace(string(v))
+	case []byte:
+		body = strings.TrimSpace(string(v))
+	default:
+		return nil, false
+	}
+	if body == "" {
+		return nil, false
+	}
+
+	dec := json.NewDecoder(strings.NewReader(body))
+	dec.UseNumber()
+	var out any
+	if err := dec.Decode(&out); err != nil {
+		return nil, false
+	}
+	return out, true
+}
+
+func codexFirstFileFromPatchStats(stats patchStats) string {
+	files := make([]string, 0, len(stats.Files)+len(stats.Deleted))
+	for file := range stats.Files {
+		files = append(files, file)
+	}
+	for file := range stats.Deleted {
+		files = append(files, file)
+	}
+	if len(files) == 0 {
+		return ""
+	}
+	sort.Strings(files)
+	return files[0]
+}
+
+func codexHookEventStatus(root map[string]any) shared.TelemetryStatus {
+	switch strings.ToLower(strings.TrimSpace(shared.FirstPathString(root,
+		[]string{"status"},
+		[]string{"result"},
+		[]string{"outcome"},
+		[]string{"tool", "status"},
+		[]string{"tool_result", "status"},
+	))) {
+	case "error", "failed", "failure":
+		return shared.TelemetryStatusError
+	case "aborted", "canceled", "cancelled":
+		return shared.TelemetryStatusAborted
+	default:
+		return shared.TelemetryStatusOK
+	}
+}
+
+func codexExtractHookTool(root map[string]any) (toolName, toolCallID string, ok bool) {
+	eventName := strings.ToLower(core.FirstNonEmpty(
+		shared.FirstPathString(root, []string{"hook_event_name"}),
+		shared.FirstPathString(root, []string{"hook_event"}),
+		shared.FirstPathString(root, []string{"event"}),
+		shared.FirstPathString(root, []string{"type"}),
+	))
+	toolName = strings.TrimSpace(shared.FirstPathString(root,
+		[]string{"tool_name"},
+		[]string{"toolName"},
+		[]string{"tool", "name"},
+		[]string{"tool"},
+	))
+	if toolName == "" && strings.Contains(eventName, "tool") {
+		toolName = strings.TrimSpace(shared.FirstPathString(root, []string{"name"}))
+	}
+	if toolName == "" {
+		return "", "", false
+	}
+	toolCallID = strings.TrimSpace(shared.FirstPathString(root,
+		[]string{"tool_call_id"},
+		[]string{"toolCallID"},
+		[]string{"tool_call", "id"},
+		[]string{"call_id"},
+		[]string{"callID"},
+	))
+	if strings.Contains(eventName, "tool") || strings.HasPrefix(strings.ToLower(toolName), "mcp__") || toolCallID != "" {
+		return normalizeToolName(toolName), toolCallID, true
+	}
+	return "", "", false
+}

@@ -6,7 +6,7 @@ sidebar_label: Ways to use it
 ---
 
 This build of OpenUsage focuses on the live dashboard and the background
-daemon. Both read the same five providers and the same local history.
+daemon. Both read the same six providers and the same local history.
 
 | Surface | Command | Use it when |
 | --- | --- | --- |

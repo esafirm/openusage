@@ -79,9 +79,8 @@ All providers implement `core.UsageProvider` from `internal/core/provider.go`:
 - `Fetch(ctx, acct) (core.UsageSnapshot, error)`
 
 Providers are registered in `internal/providers/registry.go` via `AllProviders()`.
-Current provider set: `openai`, `anthropic`, `alibaba_cloud`, `openrouter`, `groq`,
-`mistral`, `deepseek`, `xai`, `opencode`, `gemini_api`, `gemini_cli`,
-`ollama`, `copilot`, `cursor`, `claude_code`, `codex`.
+Current provider set: `openai`, `opencode`, `antigravity`, `claude_code`,
+`codex`, `copilot`.
 
 ## Code Style
 

@@ -260,26 +260,44 @@ func computeDisplayInfoRaw(snap core.UsageSnapshot, widget core.DashboardWidget,
 
 	rateLimits := core.ExtractRateLimitDisplayMetrics(snap.Metrics)
 	if len(rateLimits) > 0 {
-		worstRatePct := float64(100)
+		worstRatePct := float64(0)
 		rateParts := make([]string, 0, len(rateLimits))
 		for _, rate := range rateLimits {
-			if rate.UsedPercent < worstRatePct {
-				worstRatePct = rate.UsedPercent
-			}
+			usedPct := rate.UsedPercent
+			label := strings.ToUpper(rate.LabelKey)
 			if rate.UsesRemainingPercent {
-				label := metricLabel(widget, rate.LabelKey)
-				rateParts = append(rateParts, fmt.Sprintf("%s %.0f%%", label, 100-rate.RemainingPercent))
-				continue
+				// rate_limit_* metrics carry the remaining percent, so
+				// derive the used percent for both the label and the hero
+				// gauge.
+				usedPct = 100 - rate.RemainingPercent
+				label = metricLabel(widget, rate.LabelKey)
 			}
-			rateParts = append(rateParts, fmt.Sprintf("%s %.0f%%", strings.ToUpper(rate.LabelKey), 100-rate.UsedPercent))
+			if usedPct > worstRatePct {
+				worstRatePct = usedPct
+			}
+			rateParts = append(rateParts, fmt.Sprintf("%s %.0f%%", label, usedPct))
 		}
 		info.tagEmoji = "⚡"
 		info.tagLabel = "Usage"
-		info.gaugePercent = 100 - worstRatePct
-		info.summary = fmt.Sprintf("%.0f%% used", 100-worstRatePct)
+		info.gaugePercent = worstRatePct
+		info.summary = fmt.Sprintf("%.0f%% used", worstRatePct)
 		if len(rateParts) > 0 {
 			sort.Strings(rateParts)
 			info.detail = strings.Join(rateParts, " · ")
+		}
+		// When organization usage is available, spend is the more useful
+		// hero line; keep the rate-limit percentages in the detail.
+		if cost, ok := snap.Metrics["today_api_cost"]; ok && cost.Used != nil && !hideCosts {
+			info.tagEmoji = "💰"
+			info.tagLabel = "Credits"
+			info.reason = "today_api_cost"
+			info.gaugePercent = -1
+			info.summary = fmt.Sprintf("~$%.2f today", *cost.Used)
+			detail := strings.Join(rateParts, " · ")
+			if weekly, ok := snap.Metrics["7d_api_cost"]; ok && weekly.Used != nil {
+				detail = fmt.Sprintf("~$%.2f 7d · %s", *weekly.Used, detail)
+			}
+			info.detail = detail
 		}
 		return info
 	}
@@ -343,6 +361,17 @@ func computeDisplayInfoRaw(snap core.UsageSnapshot, widget core.DashboardWidget,
 			info.detail = fmt.Sprintf("$%.2f balance", *bal.Remaining)
 		}
 		core.Tracef("[display] %s: branch=rolling_usage used=%.1f gauge=%.1f -> tag=Usage", snap.ProviderID, *ru.Used, info.gaugePercent)
+		return info
+	}
+
+	if m, ok := snap.Metrics["console_balance"]; ok && m.Remaining != nil && !hideCosts {
+		info.tagEmoji = "💰"
+		info.tagLabel = "Credits"
+		info.reason = "console_balance"
+		info.summary = fmt.Sprintf("$%.2f balance", *m.Remaining)
+		if usage, ok := snap.Metrics["monthly_usage"]; ok && usage.Used != nil {
+			info.detail = fmt.Sprintf("$%.2f spent · 30d", *usage.Used)
+		}
 		return info
 	}
 

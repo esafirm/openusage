@@ -609,3 +609,32 @@ func TestComputeDisplayInfo_RollingUsageBranchClassifiesAsUsageNotCredits(t *tes
 		t.Fatalf("reason = %q, want rolling_usage", got.reason)
 	}
 }
+
+// OpenCode's console balance has no limit/used pair, so it cannot drive a
+// gauge. It should still be the tile's hero line, otherwise the tile falls
+// back to the window activity summary and the balance is only visible in the
+// (optional) Other Data section.
+func TestComputeDisplayInfo_ConsoleBalanceIsHero(t *testing.T) {
+	balance := 9.72
+	spent := 0.28
+	snap := core.UsageSnapshot{
+		ProviderID: "opencode",
+		AccountID:  "opencode",
+		Status:     core.StatusOK,
+		Metrics: map[string]core.Metric{
+			"console_balance": {Remaining: &balance, Unit: "USD", Window: "current"},
+			"monthly_usage":   {Used: &spent, Unit: "USD", Window: "month"},
+		},
+	}
+
+	got := computeDisplayInfo(snap, dashboardWidget("opencode"), false)
+	if got.tagLabel != "Credits" {
+		t.Fatalf("tagLabel = %q, want Credits", got.tagLabel)
+	}
+	if got.summary != "$9.72 balance" {
+		t.Errorf("summary = %q, want %q", got.summary, "$9.72 balance")
+	}
+	if !strings.Contains(got.detail, "$0.28 spent") {
+		t.Errorf("detail = %q, want monthly spend", got.detail)
+	}
+}

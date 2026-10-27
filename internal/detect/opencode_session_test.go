@@ -47,7 +47,7 @@ func opencodeResult() *Result {
 
 func TestDetectOpenCodeConsoleSession_ImportsFromKeychainFreeBrowser(t *testing.T) {
 	reader := &browsercookies.FakeReader{Cookies: []browsercookies.Cookie{{
-		Name: "auth", Value: "secret", Domain: ".opencode.ai", Source: "firefox",
+		Name: opencodeConsoleCookieName, Value: "secret", Domain: opencodeConsoleDomain, Source: "firefox",
 		Expires: time.Now().Add(24 * time.Hour),
 	}}}
 	saved := stubOpenCodeSession(t, nil, reader)
@@ -56,11 +56,11 @@ func TestDetectOpenCodeConsoleSession_ImportsFromKeychainFreeBrowser(t *testing.
 	detectOpenCodeConsoleSession(r)
 
 	sess, ok := saved["opencode"]
-	if !ok || sess.Value != "secret" || sess.SourceBrowser != "firefox" || sess.CookieName != "auth" {
+	if !ok || sess.Value != "secret" || sess.SourceBrowser != "firefox" || sess.CookieName != opencodeConsoleCookieName {
 		t.Fatalf("session not imported: %+v", saved)
 	}
 	acct := r.Accounts[0]
-	if acct.BrowserCookie == nil || acct.BrowserCookie.Domain != ".opencode.ai" {
+	if acct.BrowserCookie == nil || acct.BrowserCookie.Domain != opencodeConsoleDomain {
 		t.Fatalf("BrowserCookie ref not attached: %+v", acct.BrowserCookie)
 	}
 	if got := acct.Hint("console_session_source", ""); got != "browser:firefox" {
@@ -69,7 +69,7 @@ func TestDetectOpenCodeConsoleSession_ImportsFromKeychainFreeBrowser(t *testing.
 }
 
 func TestDetectOpenCodeConsoleSession_StoredSessionIsNotRefreshed(t *testing.T) {
-	reader := &browsercookies.FakeReader{Cookies: []browsercookies.Cookie{{Name: "auth", Value: "newer", Domain: ".opencode.ai", Source: "safari"}}}
+	reader := &browsercookies.FakeReader{Cookies: []browsercookies.Cookie{{Name: opencodeConsoleCookieName, Value: "newer", Domain: opencodeConsoleDomain, Source: "safari"}}}
 	saved := stubOpenCodeSession(t, &config.BrowserSession{Value: "stored", SourceBrowser: "chrome"}, reader)
 	r := opencodeResult()
 

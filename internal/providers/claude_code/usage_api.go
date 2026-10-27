@@ -271,11 +271,47 @@ func fetchUsageAPIWithAuth(ctx context.Context, url string, setAuth func(*http.R
 // variable rather than a constant so tests can point it at an httptest server.
 var oauthUsageURL = "https://api.anthropic.com/api/oauth/usage"
 
-// readClaudeCodeOAuthToken loads the Claude Code CLI's OAuth access token from
-// ~/.claude/.credentials.json. It errors if the file is missing, the token is
-// absent, or the token has already expired (Claude Code refreshes it on next
-// use, so a stale value would only produce 401s).
+// claudeCodeKeychainService is the macOS login-keychain item current Claude
+// Code releases write their OAuth credentials to. It mirrors the probe in
+// internal/detect.
+const claudeCodeKeychainService = "Claude Code-credentials"
+
+// claudeKeychainTokenReader is a test seam for the macOS keychain lookup.
+var claudeKeychainTokenReader = readClaudeCodeKeychainToken
+
+// readClaudeCodeOAuthToken loads the Claude Code CLI's OAuth access token.
+//
+// Current macOS releases store it in the login keychain, while older releases
+// and non-macOS installs keep it in ~/.claude/.credentials.json. Try the
+// keychain first on macOS: once the CLI switches to keychain storage the file
+// copy stops being refreshed and goes stale. Fall back to the file so older
+// installs keep working.
+//
+// It errors if neither source has a token, or if the token has already
+// expired (Claude Code refreshes it on next use, so a stale value would only
+// produce 401s).
 func readClaudeCodeOAuthToken() (string, error) {
+	var keychainErr error
+	if runtime.GOOS == "darwin" {
+		token, err := claudeKeychainTokenReader()
+		if err == nil {
+			return token, nil
+		}
+		keychainErr = err
+	}
+
+	token, fileErr := readClaudeCodeOAuthTokenFile()
+	if fileErr == nil {
+		return token, nil
+	}
+	if keychainErr != nil {
+		return "", fmt.Errorf("%v; %w", keychainErr, fileErr)
+	}
+	return "", fileErr
+}
+
+// readClaudeCodeOAuthTokenFile reads the pre-keychain credentials file.
+func readClaudeCodeOAuthTokenFile() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolving home directory: %w", err)
@@ -286,22 +322,46 @@ func readClaudeCodeOAuthToken() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("reading Claude Code credentials: %w", err)
 	}
+	return parseClaudeOAuthToken(credsData, credsPath)
+}
 
+// readClaudeCodeKeychainToken shells out to the macOS security CLI. The
+// timeout keeps a locked keychain or a UI prompt from blocking the daemon's
+// poll loop; the caller falls back to the credentials file on failure.
+func readClaudeCodeKeychainToken() (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "/usr/bin/security",
+		"find-generic-password", "-w", "-s", claudeCodeKeychainService).Output()
+	if err != nil {
+		if keychainItemNotFound(err) {
+			return "", fmt.Errorf("no %q item in keychain", claudeCodeKeychainService)
+		}
+		return "", fmt.Errorf("reading %q from keychain: %w", claudeCodeKeychainService, err)
+	}
+
+	return parseClaudeOAuthToken(out, "keychain "+claudeCodeKeychainService)
+}
+
+// parseClaudeOAuthToken extracts and validates the OAuth access token from
+// the Claude Code credentials JSON (file or keychain, same shape).
+func parseClaudeOAuthToken(data []byte, source string) (string, error) {
 	var creds struct {
 		ClaudeAiOauth struct {
 			AccessToken string `json:"accessToken"`
 			ExpiresAt   int64  `json:"expiresAt"`
 		} `json:"claudeAiOauth"`
 	}
-	if err := json.Unmarshal(credsData, &creds); err != nil {
-		return "", fmt.Errorf("parsing Claude Code credentials: %w", err)
+	if err := json.Unmarshal(data, &creds); err != nil {
+		return "", fmt.Errorf("parsing Claude Code credentials from %s: %w", source, err)
 	}
 	token := creds.ClaudeAiOauth.AccessToken
 	if token == "" {
-		return "", fmt.Errorf("no OAuth access token in %s", credsPath)
+		return "", fmt.Errorf("no OAuth access token in %s", source)
 	}
 	if exp := creds.ClaudeAiOauth.ExpiresAt; exp > 0 && time.Now().UnixMilli() >= exp {
-		return "", fmt.Errorf("Claude Code OAuth token expired (refreshed on next Claude Code use)")
+		return "", fmt.Errorf("Claude Code OAuth token from %s expired (refreshed on next Claude Code use)", source)
 	}
 	return token, nil
 }

@@ -185,3 +185,22 @@ func TestNew_ReturnsReader(t *testing.T) {
 		t.Fatal("NewWithTimeout returned nil")
 	}
 }
+
+func TestFakeReader_ReadCookieFromProfile(t *testing.T) {
+	f := &FakeReader{Cookies: []Cookie{
+		{Name: "__Host-console_session", Value: "work", Domain: "opencode.ai", Source: "chrome", Profile: "Esa Bandlab"},
+		{Name: "__Host-console_session", Value: "go", Domain: "opencode.ai", Source: "chrome", Profile: "Esa"},
+	}}
+
+	got, err := f.ReadCookieFromProfile(context.Background(), "opencode.ai", "__Host-console_session", "chrome", "Esa")
+	if err != nil {
+		t.Fatalf("ReadCookieFromProfile: %v", err)
+	}
+	if got.Value != "go" {
+		t.Fatalf("value = %q, want go", got.Value)
+	}
+
+	if _, err := f.ReadCookieFromProfile(context.Background(), "opencode.ai", "__Host-console_session", "chrome", "Missing"); err == nil {
+		t.Fatal("expected error for missing profile")
+	}
+}

@@ -14,7 +14,9 @@ package browsercookies
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -27,21 +29,24 @@ import (
 	// import. Importing here from a single place keeps the cookie surface
 	// consistent for the whole binary.
 	_ "github.com/browserutils/kooky/browser/all"
+	_ "github.com/mattn/go-sqlite3" // chromiumLastAccess reads Chrome's cookie DB directly
 )
 
 // Cookie is the openusage-internal representation of a browser cookie. We
 // don't expose kooky's full type because we never need 95% of it — name,
 // value, domain, path, expiry are all that matter for HTTP replay.
 type Cookie struct {
-	Name      string
-	Value     string
-	Domain    string
-	Path      string
-	Expires   time.Time
-	HTTPOnly  bool
-	Secure    bool
-	Source    string // "chrome", "firefox", "safari", "edge", "brave"
-	StorePath string // absolute path of the cookie store file the value came from (debugging only)
+	Name       string
+	Value      string
+	Domain     string
+	Path       string
+	Expires    time.Time
+	LastAccess time.Time // Chromium stores only; zero when unavailable
+	HTTPOnly   bool
+	Secure     bool
+	Source     string // "chrome", "firefox", "safari", "edge", "brave"
+	Profile    string // browser profile display name, e.g. "Esa" / "Profile 1"
+	StorePath  string // absolute path of the cookie store file the value came from (debugging only)
 }
 
 // IsExpired reports whether the cookie's Expires has already passed. Session
@@ -89,6 +94,11 @@ type Reader interface {
 	// require an OS secret (Firefox, Safari). Pass an explicit browser to
 	// scan a Chromium-family store.
 	ReadCookie(ctx context.Context, domain, name, browser string) (Cookie, error)
+
+	// ReadCookieFromProfile reads the cookie from one specific browser
+	// profile. Chromium keeps a separate cookie store per profile, and users
+	// often have different accounts (for example work and personal) in each.
+	ReadCookieFromProfile(ctx context.Context, domain, name, browser, profile string) (Cookie, error)
 
 	// AvailableBrowsers reports which supported browsers have at least one
 	// cookie store on disk. The TUI uses it to render a picker so the user
@@ -172,6 +182,11 @@ func canonicalBrowser(raw string) string {
 // the freshest match for (domain, name). Each store is decrypted exactly
 // once — that's the keychain-prompt unit on macOS — so we trust callers to
 // have already filtered down to a single browser.
+//
+// "Freshest" is by Chromium's last_access_utc when available, because profile
+// expiry dates are not a reliable signal: a stale profile can carry a later
+// expiry than the profile the user is actually logged in to. Falls back to
+// expiry for stores that don't expose last access (Firefox, Safari).
 func readFromStores(stores []kooky.CookieStore, domain, name string) (Cookie, bool) {
 	var best Cookie
 	bestSet := false
@@ -193,28 +208,74 @@ func readFromStores(stores []kooky.CookieStore, domain, name string) (Cookie, bo
 			}
 			source := ""
 			filePath := ""
+			profile := ""
 			if kc.Browser != nil {
 				source = canonicalBrowser(kc.Browser.Browser())
 				filePath = kc.Browser.FilePath()
+				profile = kc.Browser.Profile()
 			}
 			candidate := Cookie{
-				Name:      kc.Name,
-				Value:     kc.Value,
-				Domain:    kc.Domain,
-				Path:      kc.Path,
-				Expires:   kc.Expires,
-				HTTPOnly:  kc.HttpOnly,
-				Secure:    kc.Secure,
-				Source:    source,
-				StorePath: filePath,
+				Name:       kc.Name,
+				Value:      kc.Value,
+				Domain:     kc.Domain,
+				Path:       kc.Path,
+				Expires:    kc.Expires,
+				LastAccess: chromiumLastAccess(source, filePath, kc.Domain, kc.Name),
+				HTTPOnly:   kc.HttpOnly,
+				Secure:     kc.Secure,
+				Source:     source,
+				Profile:    profile,
+				StorePath:  filePath,
 			}
-			if !bestSet || candidate.Expires.After(best.Expires) {
+			if !bestSet || cookieIsFresher(candidate, best) {
 				best = candidate
 				bestSet = true
 			}
 		}
 	}
 	return best, bestSet
+}
+
+// cookieIsFresher reports whether a should replace b. Last access wins when
+// either side has it; expiry is the fallback for non-Chromium stores.
+func cookieIsFresher(a, b Cookie) bool {
+	if !a.LastAccess.IsZero() || !b.LastAccess.IsZero() {
+		return a.LastAccess.After(b.LastAccess)
+	}
+	return a.Expires.After(b.Expires)
+}
+
+// chromiumLastAccess reads last_access_utc from a Chromium-family cookie DB.
+// The value lets us pick the profile the user actually browses in, instead of
+// the profile with the longest-lived cookie. Returns zero on any error.
+func chromiumLastAccess(source, storePath, domain, name string) time.Time {
+	switch source {
+	case "chrome", "edge", "brave", "vivaldi", "opera":
+	default:
+		return time.Time{}
+	}
+	if storePath == "" {
+		return time.Time{}
+	}
+
+	dsn := url.URL{Scheme: "file", Path: storePath, RawQuery: "mode=ro"}
+	db, err := sql.Open("sqlite3", dsn.String())
+	if err != nil {
+		return time.Time{}
+	}
+	defer db.Close()
+
+	var webkitMicros int64
+	err = db.QueryRow(
+		`SELECT last_access_utc FROM cookies WHERE name = ? AND host_key IN (?, ?) ORDER BY last_access_utc DESC LIMIT 1`,
+		name, domain, "."+domain,
+	).Scan(&webkitMicros)
+	if err != nil || webkitMicros <= 0 {
+		return time.Time{}
+	}
+
+	const unixEpochOffsetMicros = 11644473600000000 // 1601-01-01 → 1970-01-01
+	return time.UnixMicro(webkitMicros - unixEpochOffsetMicros).UTC()
 }
 
 func (r *kookyReader) ReadCookie(ctx context.Context, domain, name, browser string) (Cookie, error) {
@@ -239,6 +300,52 @@ func (r *kookyReader) ReadCookie(ctx context.Context, domain, name, browser stri
 	}()
 
 	picked := pickStoresForBrowser(all, browser)
+	if len(picked) == 0 {
+		return Cookie{}, ErrNoCookieFound
+	}
+
+	cookie, ok := readFromStores(picked, domain, name)
+	if !ok {
+		return Cookie{}, ErrNoCookieFound
+	}
+	return cookie, nil
+}
+
+// ReadCookieFromProfile reads a cookie from one named browser profile. Empty
+// profile falls back to ReadCookie (the most recently used profile).
+func (r *kookyReader) ReadCookieFromProfile(ctx context.Context, domain, name, browser, profile string) (Cookie, error) {
+	if strings.TrimSpace(profile) == "" {
+		return r.ReadCookie(ctx, domain, name, browser)
+	}
+	if r.readTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.readTimeout)
+		defer cancel()
+	}
+
+	browser = canonicalBrowser(browser)
+	all := kooky.FindAllCookieStores(ctx)
+	defer func() {
+		for _, s := range all {
+			if s != nil {
+				_ = s.Close()
+			}
+		}
+	}()
+
+	var picked []kooky.CookieStore
+	for _, s := range all {
+		if s == nil {
+			continue
+		}
+		if canonicalBrowser(s.Browser()) != browser {
+			continue
+		}
+		if !strings.EqualFold(s.Profile(), profile) {
+			continue
+		}
+		picked = append(picked, s)
+	}
 	if len(picked) == 0 {
 		return Cookie{}, ErrNoCookieFound
 	}
@@ -340,6 +447,29 @@ func (f *FakeReader) ReadCookie(_ context.Context, domain, name, browser string)
 			continue
 		}
 		if browser != "" && canonicalBrowser(c.Source) != browser {
+			continue
+		}
+		return c, nil
+	}
+	return Cookie{}, ErrNoCookieFound
+}
+
+func (f *FakeReader) ReadCookieFromProfile(_ context.Context, domain, name, browser, profile string) (Cookie, error) {
+	f.mu.Lock()
+	f.calls++
+	f.mu.Unlock()
+	if f.Err != nil {
+		return Cookie{}, f.Err
+	}
+	browser = canonicalBrowser(browser)
+	for _, c := range f.Cookies {
+		if c.Name != name || !matches(c.Domain, domain) {
+			continue
+		}
+		if browser != "" && canonicalBrowser(c.Source) != browser {
+			continue
+		}
+		if strings.TrimSpace(profile) != "" && !strings.EqualFold(c.Profile, profile) {
 			continue
 		}
 		return c, nil

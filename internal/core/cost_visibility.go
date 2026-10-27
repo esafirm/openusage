@@ -27,7 +27,7 @@ func ResolveHideCosts(snap UsageSnapshot, perAccount *bool, global *bool) bool {
 // dollar amounts are not actually billed to the user; pay-as-you-go and BYOK
 // accounts show costs.
 func autoHideCosts(snap UsageSnapshot) bool {
-	if snap.Raw == nil {
+	if snap.Raw == nil && snap.Attributes == nil {
 		return false
 	}
 	switch snap.ProviderID {
@@ -36,6 +36,18 @@ func autoHideCosts(snap UsageSnapshot) bool {
 		// cost is informational only and confuses users who do not see those
 		// dollars on their statement.
 		return strings.EqualFold(snap.Raw["subscription"], "active")
+	case "codex":
+		plan := strings.TrimSpace(snap.Raw["plan_type"])
+		if plan == "" {
+			// Read-model snapshots carry provider attributes, not Raw.
+			plan = strings.TrimSpace(snap.Attributes["plan_type"])
+		}
+		plan = strings.ToLower(plan)
+		switch plan {
+		case "plus", "pro", "team", "enterprise":
+			return true
+		}
+		return false
 	case "copilot":
 		plan := strings.ToLower(strings.TrimSpace(snap.Raw["copilot_plan"]))
 		switch plan {

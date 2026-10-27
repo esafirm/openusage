@@ -40,6 +40,7 @@ func AutoDetect() Result {
 
 	// Phase 1: tool-binding detectors for the supported provider set.
 	detectClaudeCode(&result)
+	detectCodex(&result)
 	detectGHCopilot(&result)
 	detectAntigravity(&result)
 
