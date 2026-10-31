@@ -1,7 +1,6 @@
-import type { Plugin } from "@opencode-ai/plugin"
 // openusage-integration-version: __OPENUSAGE_INTEGRATION_VERSION__
 
-import { createConnection as netCreateConnection } from "node:net"
+import { request as httpRequest } from "node:http"
 import { existsSync, mkdirSync, writeFileSync, renameSync, readdirSync } from "node:fs"
 
 type RuntimeConfig = {
@@ -11,6 +10,52 @@ type RuntimeConfig = {
 }
 
 type AnyRecord = Record<string, unknown>
+
+type V1Hooks = {
+  event?: (input: { event: unknown }) => Promise<void>
+  "tool.execute.after"?: (input: unknown, output: unknown) => Promise<void>
+  "chat.message"?: (input: unknown, output: unknown) => Promise<void>
+}
+
+type ToolExecuteAfterEvent = {
+  tool: string
+  sessionID: string
+  id: string
+  status: "completed" | "error"
+  result?: unknown
+  error?: unknown
+}
+
+type StepStartedData = {
+  sessionID: string
+  assistantMessageID: string
+  agent: string
+  model?: { id: string; providerID: string; variant?: string }
+}
+
+type StepEndedData = {
+  assistantMessageID: string
+  cost: number
+  tokens: {
+    input: number
+    output: number
+    reasoning: number
+    cache: { read: number; write: number }
+  }
+}
+
+type PluginEvent =
+  | { type: "session.step.started"; data: StepStartedData }
+  | { type: "session.step.ended"; data: StepEndedData }
+
+type PluginContext = {
+  tool: {
+    hook(name: "execute.after", callback: (event: ToolExecuteAfterEvent) => Promise<void> | void): Promise<unknown>
+  }
+  event: {
+    subscribe(options: { types: string[]; signal: AbortSignal }): AsyncIterable<PluginEvent>
+  }
+}
 
 function parseBool(value: string | undefined, defaultValue: boolean): boolean {
   if (value === undefined) {
@@ -330,15 +375,34 @@ function resolveHookSpoolDir(): string {
 
 async function postToSocket(socketPath: string, path: string, body: string): Promise<boolean> {
   return new Promise((resolve) => {
-    const conn = netCreateConnection({ path: socketPath })
-    let resolved = false
-    const done = (ok: boolean) => { if (!resolved) { resolved = true; resolve(ok) } }
-    conn.setTimeout(2000, () => { conn.destroy(); done(false) })
-    conn.on("error", () => done(false))
-    conn.on("connect", () => {
-      const req = `POST ${path} HTTP/1.0\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`
-      conn.write(req, () => { conn.destroy(); done(true) })
-    })
+    let settled = false
+    const done = (ok: boolean) => {
+      if (settled) return
+      settled = true
+      resolve(ok)
+    }
+
+    const req = httpRequest(
+      {
+        socketPath,
+        path,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+          Connection: "close",
+        },
+        timeout: 2000,
+      },
+      (res) => {
+        res.resume()
+        res.on("error", () => done(false))
+        res.on("end", () => done(res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300))
+      },
+    )
+    req.on("timeout", () => { req.destroy(); done(false) })
+    req.on("error", () => done(false))
+    req.end(body)
   })
 }
 
@@ -391,19 +455,33 @@ async function sendPayload(cfg: RuntimeConfig, payload: unknown): Promise<void> 
   await spoolToDisk("opencode", cfg.accountID || "", payloadJSON, cfg.verbose)
 }
 
-export const OpenUsageTelemetry: Plugin = async () => {
-  const cfg = loadConfig()
-  if (!cfg.enabled) {
-    return {}
-  }
+type Enqueue = (payload: unknown) => Promise<void>
 
+function createEnqueue(cfg: RuntimeConfig): Enqueue {
   let queue: Promise<void> = Promise.resolve()
-  const enqueue = (payload: unknown): Promise<void> => {
+  return (payload) => {
     queue = queue
       .catch(() => undefined)
       .then(() => sendPayload(cfg, payload))
     return queue
   }
+}
+
+type StepInfo = {
+  sessionID: string
+  agent: string
+  variant: string
+  providerID: string
+  modelID: string
+}
+
+const OpenUsageTelemetry = async (): Promise<V1Hooks> => {
+  const cfg = loadConfig()
+  if (!cfg.enabled) {
+    return {}
+  }
+
+  const enqueue = createEnqueue(cfg)
 
   return {
     async event(input) {
@@ -434,4 +512,108 @@ export const OpenUsageTelemetry: Plugin = async () => {
   }
 }
 
-export default OpenUsageTelemetry
+export default {
+  id: "openusage.telemetry",
+  async setup(ctx: PluginContext) {
+    const cfg = loadConfig()
+    if (!cfg.enabled) {
+      return
+    }
+
+    const enqueue = createEnqueue(cfg)
+    const controller = new AbortController()
+    const steps = new Map<string, StepInfo>()
+
+    await ctx.tool.hook("execute.after", (event) => {
+      const result = event.status === "completed" ? asRecord(event.result) : undefined
+      const metadata = asRecord(result?.metadata)
+      enqueue({
+        hook: "tool.execute.after",
+        timestamp: Date.now(),
+        input: {
+          tool: event.tool,
+          sessionID: event.sessionID,
+          callID: event.id,
+        },
+        output: {
+          title: pickString(metadata?.title, metadata?.name, result?.title),
+        },
+      })
+    })
+
+    void (async () => {
+      try {
+        for await (const event of ctx.event.subscribe({
+          types: ["session.step.started", "session.step.ended"],
+          signal: controller.signal,
+        })) {
+          if (event.type === "session.step.started") {
+            steps.set(event.data.assistantMessageID, {
+              sessionID: event.data.sessionID,
+              agent: event.data.agent,
+              variant: event.data.model?.variant ?? "",
+              providerID: event.data.model?.providerID ?? "",
+              modelID: event.data.model?.id ?? "",
+            })
+            if (steps.size > 500) {
+              const oldest = steps.keys().next().value
+              if (oldest !== undefined) {
+                steps.delete(oldest)
+              }
+            }
+            continue
+          }
+
+          const step = steps.get(event.data.assistantMessageID)
+          steps.delete(event.data.assistantMessageID)
+          if (!step) {
+            continue
+          }
+
+          enqueue({
+            hook: "chat.message",
+            timestamp: Date.now(),
+            input: {
+              sessionID: step.sessionID,
+              messageID: event.data.assistantMessageID,
+              agent: step.agent,
+              variant: step.variant,
+              model: {
+                providerID: step.providerID,
+                modelID: step.modelID,
+              },
+            },
+            output: {
+              message: {
+                id: event.data.assistantMessageID,
+                sessionID: step.sessionID,
+                role: "assistant",
+              },
+              model: {
+                providerID: step.providerID,
+                modelID: step.modelID,
+              },
+              usage: {
+                input_tokens: event.data.tokens.input,
+                output_tokens: event.data.tokens.output,
+                reasoning_tokens: event.data.tokens.reasoning,
+                cache_read_input_tokens: event.data.tokens.cache.read,
+                cache_creation_input_tokens: event.data.tokens.cache.write,
+                cost_usd: event.data.cost,
+              },
+            },
+          })
+        }
+      } catch (err) {
+        if (!controller.signal.aborted && cfg.verbose) {
+          console.error(`[openusage-telemetry] event subscription failed: ${err}`)
+        }
+      }
+    })()
+
+    return () => controller.abort()
+  },
+  async server() {
+    return OpenUsageTelemetry()
+  },
+}
